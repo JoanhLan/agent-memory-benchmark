@@ -22,7 +22,8 @@ from utils.message_pairs import iter_message_pairs, pair_count
 
 
 def _message_payload(m: LoCoMoMessage) -> dict[str, str]:
-    item: dict[str, str] = {"role": m.role, "content": m.content}
+    # Prefer LoCoMo real speaker for Platform A1 dialogue_turns; fall back to user1/user2.
+    item: dict[str, str] = {"role": (m.speaker or m.role), "content": m.content}
     if m.timestamp:
         item["timestamp"] = m.timestamp
     return item
@@ -146,12 +147,26 @@ class TiMEMAdapter(MemoryAdapter):
             latency_ms = (time.perf_counter() - started) * 1000
             resp.raise_for_status()
             data = resp.json()
+            # Platform returns 202 + task_id (async generate). Do not poll — fire-and-forget.
+            if isinstance(data, dict) and data.get("task_id"):
+                return IngestResult(
+                    success=True,
+                    latency_ms=latency_ms,
+                    session_id=session_id,
+                    raw={
+                        "body": data,
+                        "accepted": True,
+                        "task_id": data.get("task_id"),
+                        "poll_url": data.get("poll_url"),
+                    },
+                    memory_count=0,
+                )
             count = len(data) if isinstance(data, list) else 1
             return IngestResult(
                 success=True,
                 latency_ms=latency_ms,
                 session_id=session_id,
-                raw={"body": data},
+                raw={"body": data, "accepted": False},
                 memory_count=count,
             )
         except Exception as exc:
@@ -220,6 +235,47 @@ class TiMEMAdapter(MemoryAdapter):
                 error=str(exc),
                 raw={"search_config": search_cfg},
             )
+
+    async def ensure_memory_language(
+        self,
+        user_id: str,
+        memory_language: str = "en",
+    ) -> dict[str, Any]:
+        """Set Policy memory_language for (user_id, benchmark expert) before ingest."""
+        lang = str(memory_language or "en").strip().lower()
+        if lang not in ("zh", "en"):
+            raise ValueError(f"memory_language must be zh or en, got {memory_language!r}")
+        expert_id = self._settings.benchmark_expert_id
+        base = self._settings.timem_base_url.rstrip("/")
+        headers = self._headers()
+        get_url = f"{base}/api/v1/memory/policy"
+        put_url = get_url
+        params = {"user_id": user_id, "expert_id": expert_id}
+        get_resp = await self._client.get(get_url, headers=headers, params=params)
+        get_resp.raise_for_status()
+        data = (get_resp.json() or {}).get("data") or {}
+        if data.get("memory_language") == lang and data.get("effective_memory_language") == lang:
+            return {"skipped": True, "user_id": user_id, "memory_language": lang, "policy": data}
+        payload = {
+            "user_id": user_id,
+            "expert_id": expert_id,
+            "max_memory_layer": data.get("max_memory_layer")
+            or data.get("effective_max_memory_layer")
+            or "L5",
+            "profile_auto_recompute_enabled": bool(
+                data.get("profile_auto_recompute_enabled", False)
+            ),
+            "memory_language": lang,
+        }
+        put_resp = await self._client.put(put_url, headers=headers, json=payload)
+        put_resp.raise_for_status()
+        body = put_resp.json() or {}
+        return {
+            "skipped": False,
+            "user_id": user_id,
+            "memory_language": lang,
+            "policy": body.get("data") or body,
+        }
 
     async def backfill(self, user_id: str, layers: list[str]) -> BackfillResult:
         url = f"{self._settings.timem_base_url.rstrip('/')}/api/v1/backfill/manual"

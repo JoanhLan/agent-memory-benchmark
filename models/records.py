@@ -66,9 +66,10 @@ class BackfillResult:
 
 @dataclass
 class LoCoMoMessage:
-    role: str
+    role: str  # vendor-stable: user1|user2 (MemOS/Mem0 map to user/assistant)
     content: str
     timestamp: Optional[str] = None  # ISO 8601
+    speaker: Optional[str] = None  # LoCoMo real name; TiMEM posts this as messages[].role
 
 
 @dataclass

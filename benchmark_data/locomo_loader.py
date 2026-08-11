@@ -360,14 +360,17 @@ def _extract_messages(
     for idx, turn in enumerate(turns):
         ts = timestamps[idx] if idx < len(timestamps) else None
         if isinstance(turn, dict):
-            role = turn.get("role") or turn.get("speaker") or "user"
+            raw_label = turn.get("speaker") or turn.get("role") or "user"
             content = turn.get("content") or turn.get("text") or turn.get("utterance") or ""
             if content:
+                label = str(raw_label).strip()
+                speaker = label if _is_named_speaker(label) else None
                 messages.append(
                     LoCoMoMessage(
-                        role=_map_dialogue_role(str(role), resolved_map),
+                        role=_map_dialogue_role(label, resolved_map),
                         content=str(content),
                         timestamp=ts,
+                        speaker=speaker,
                     )
                 )
         elif isinstance(turn, str):

@@ -64,9 +64,11 @@ flowchart LR
 ### Pair splitting (TiMEM & Mem0)
 
 - Chunks are **adjacent 2 messages** (index 0–1, 2–3, …), not role-based.
-- LoCoMo maps the two speakers to `role: user1` and `role: user2` **per persona** (alphabetical speaker order, e.g. Caroline→user1, Melanie→user2 across all sessions); structurally each pair is still one turn each way.
+- LoCoMo keeps the real `speaker` name on each message **and** maps speakers to stable `role: user1` / `role: user2` **per persona** (alphabetical order, e.g. Caroline→user1, Melanie→user2).
+- **TiMEM** posts `messages[].role` = **real speaker name** (falls back to `user1`/`user2` if unnamed).
+- **MemOS / Mem0** still send API `role` = `user` / `assistant` (vendor enums do not allow person names as `role`).
 - Odd message count: final chunk may contain 1 message (still POSTed).
-- TiMEM pairs are **serial** (same scoped `session_id` per session) so L1 context accumulates correctly.
+- TiMEM pairs are **serial** (same scoped `session_id` per session). Platform L1 generation is **async (HTTP 202)**; the harness treats accept as success and does **not** poll `task_id` (fire-and-forget). Retrieve should run after generation has had time to finish (or use L2 finalize / wait options).
 - TiMEM sessions for the **same `user_id` are serial** across sessions (global concurrency still applies across personas). Parallel sessions per user can break L2 generation — the harness serializes per `user_id`.
 - L2 is **not** produced by `POST /api/v1/memory/` alone. When enabled, after ingest the harness runs **L2 backfill + wait** (`ingest.json` → `timem_l2_finalize`). Backfill must report `stats.total_tasks > 0`; otherwise finalize fails fast (no 600s idle wait).
 - **Dashboard**: checkbox **「Ingest 后等待 TiMEM L2」** (`wait_timem_l2_on_ingest`, default **off**). Unchecked ingest ends after memory writes (`timem_l2_finalize.skipped=true`); use manual Backfill or T0 retrieval (L2 safety net) later. **CLI** `ingest` still waits for L2 by default; pass `--no-wait-timem-l2` to skip.
@@ -137,19 +139,21 @@ Per-system granularity is documented in **Ingest granularity** above. Summary:
 
 ### TiMEM (pair-by-pair)
 
-Serial POST per adjacent 2 messages, same `session_id`:
+Serial POST per adjacent 2 messages, same `session_id`. Platform responds **202 + `task_id`** (async L1); harness records accept and does **not** poll:
 
 ```
-POST /api/v1/memory/?format=compact
+POST /api/v1/memory/
 {
   "user_id": "timem_{run_id}_{persona_id}",
   "expert_id": "benchmark",
   "session_id": "{run_id}_{persona_id}_session_{nn}",
-  "messages": [{"role": "user1|user2", "content": "..."}],  // 1–2 msgs per call
-  "memory_levels": ["L1"]
+  "messages": [{"role": "<LoCoMo speaker name>", "content": "...", "timestamp": "..."}],
+  "memory_levels": ["L1"],
+  "format": "compact"
 }
 ```
 
+Runs that posted `user1`/`user2` as TiMEM `role` are **not** directly comparable to speaker-name runs.
 ### MemOS Cloud (whole session)
 
 ```
@@ -376,7 +380,7 @@ Note: with `system_parallel: true`, each system has its own `run_wall_ms`; three
 ## Fairness Appendix
 
 1. **T1 asymmetry**: Only TiMEM runs L2–L5 backfill before T1 search. MemOS/Mem0 T1 re-runs the same search as T0. Label MemOS/Mem0 T1 as "same as T0" in comparisons.
-2. **Mem0 ingest semantics**: Mem0 ingest latency includes async event polling **per pair**; TiMEM pair ingest is serial synchronous POSTs; MemOS is one synchronous POST per session.
+2. **Mem0 ingest semantics**: Mem0 ingest latency includes async event polling **per pair**; TiMEM pair ingest is serial POSTs that **accept** async L1 tasks (HTTP 202, no task poll); MemOS is one synchronous POST per session.
 3. **Ingest granularity**: TiMEM/Mem0 use pair-by-pair writes; MemOS uses whole-session batch. Old runs (whole-session TiMEM/Mem0) are not comparable—re-ingest with a new `run_id`.
 4. **Token counting**: Harness-side `cl100k_base` estimate on recalled memory text. May differ slightly from vendor-internal counters.
 5. **Not measured**: MemOS Chat API, KV-cache injection, load/stress testing, hard cleanup.

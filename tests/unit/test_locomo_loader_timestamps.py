@@ -27,6 +27,8 @@ def test_parse_official_locomo_row_assigns_message_timestamps():
     assert session.messages[1].timestamp == "2023-05-08T13:57:00"
     assert session.messages[0].role == "user1"
     assert session.messages[1].role == "user2"
+    assert session.messages[0].speaker == "Alice"
+    assert session.messages[1].speaker == "Bob"
 
 
 def test_parse_official_locomo_row_maps_speakers_to_user1_user2():
@@ -43,8 +45,9 @@ def test_parse_official_locomo_row_maps_speakers_to_user1_user2():
     }
     persona = _parse_official_locomo_row(row, 0)
     assert persona is not None
-    roles = [m.role for m in persona.sessions[0].messages]
-    assert roles == ["user1", "user2", "user1"]
+    msgs = persona.sessions[0].messages
+    assert [m.role for m in msgs] == ["user1", "user2", "user1"]
+    assert [m.speaker for m in msgs] == ["Caroline", "Melanie", "Caroline"]
 
 
 def test_parse_official_locomo_row_no_date_time_leaves_timestamps_none():
