@@ -112,7 +112,8 @@ async function pollJob() {
   try {
     const prev = job.value?.status;
     job.value = await fetchJob(props.runId);
-    opts.applyFromJob(job.value);
+    // Do not applyFromJob here — it overwrites the form every 2s with the last
+    // job's options (e.g. rethink=true), so UI changes snap back.
     busy.value = job.value?.status === "running";
     if (prev === "running" && job.value?.status === "completed") bumpRefresh();
   } catch {
@@ -137,7 +138,9 @@ watch(
   () => {
     job.value = null;
     if (props.runId) {
-      pollJob();
+      pollJob().then(() => {
+        if (job.value) opts.applyFromJob(job.value);
+      });
       startPolling();
     } else stopPolling();
   },

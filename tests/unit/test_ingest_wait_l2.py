@@ -23,6 +23,16 @@ def test_job_options_wait_timem_l2_parses_true():
     assert opts.wait_timem_l2_on_ingest is True
 
 
+def test_job_options_memory_language_default_en():
+    opts = JobOptions.from_dict({})
+    assert opts.memory_language == "en"
+
+
+def test_job_options_memory_language_parses_zh():
+    opts = JobOptions.from_dict({"memory_language": "zh"})
+    assert opts.memory_language == "zh"
+
+
 @pytest.mark.asyncio
 async def test_ingest_uses_scoped_timem_session_id():
     adapter = MagicMock(spec=TiMEMAdapter)

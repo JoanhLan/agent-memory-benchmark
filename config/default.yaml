@@ -1,5 +1,7 @@
 benchmark:
   expert_id: benchmark
+  # TiMEM memory generation language (zh|en); applied via PUT /api/v1/memory/policy before ingest
+  memory_language: en
   top_k: 10
   persona_count: 10
   backfill_timeout_sec: 600

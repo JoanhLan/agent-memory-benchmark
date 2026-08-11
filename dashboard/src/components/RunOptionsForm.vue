@@ -84,14 +84,22 @@
     </div>
     <div v-if="opts.systemsTimem.value" class="form-group" style="grid-column: 1 / -1">
       <label class="form-label">TiMEM Ingest</label>
-      <div class="check-row">
+      <div class="check-row" style="align-items: center; gap: 16px; flex-wrap: wrap">
+        <label>
+          记忆语言
+          <select v-model="opts.memoryLanguage.value" style="margin-left: 8px">
+            <option value="en">English (en)</option>
+            <option value="zh">中文 (zh)</option>
+          </select>
+        </label>
         <label>
           <input type="checkbox" v-model="opts.waitTimemL2OnIngest.value" />
           Ingest 后等待 TiMEM L2
         </label>
       </div>
       <p class="hint" style="margin-top: 6px">
-        未勾选时 Ingest 仅写入记忆；可稍后用手动 Backfill 或 T0 检索补 L2
+        记忆语言会在 Ingest 前写入 TiMEM Policy（expert=benchmark）。英文 LoCoMo 建议选 en。
+        未勾选 L2 时 Ingest 仅写入记忆；可稍后用手动 Backfill 或 T0 检索补 L2。
       </p>
     </div>
     <div class="form-group" style="grid-column: 1 / -1">

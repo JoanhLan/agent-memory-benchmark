@@ -27,6 +27,11 @@ REPORTS_DIR = PROJECT_ROOT / "reports"
 JobType = Literal["full", "ingest", "retrieve", "timem_sweep", "backfill", "pipeline"]
 
 
+def _normalize_memory_language(value: Any, *, default: str = "en") -> str:
+    lang = str(value if value is not None else default or "en").strip().lower()
+    return lang if lang in ("zh", "en") else "en"
+
+
 @dataclass
 class JobOptions:
     use_fixture: bool = True
@@ -44,6 +49,7 @@ class JobOptions:
     retrieval_overrides: dict[str, Any] = field(default_factory=dict)
     backfill_layers: list[str] = field(default_factory=lambda: ["L2"])
     wait_timem_l2_on_ingest: bool = False
+    memory_language: str = "en"
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> JobOptions:
@@ -79,6 +85,10 @@ class JobOptions:
             retrieval_overrides=dict(data.get("retrieval_overrides") or {}),
             backfill_layers=backfill_layers,
             wait_timem_l2_on_ingest=bool(data.get("wait_timem_l2_on_ingest", False)),
+            memory_language=_normalize_memory_language(
+                data.get("memory_language"),
+                default=get_settings().timem_memory_language,
+            ),
         )
 
 
@@ -208,6 +218,7 @@ class JobManager:
                 "retrieval_overrides": options.retrieval_overrides,
                 "backfill_layers": options.backfill_layers,
                 "wait_timem_l2_on_ingest": options.wait_timem_l2_on_ingest,
+                "memory_language": options.memory_language,
             },
             error=None,
             logs=(self.load_status(run_id) or {}).get("logs") or [],
@@ -281,6 +292,7 @@ class JobManager:
             await run_ingest(
                 **base,
                 wait_timem_l2_on_ingest=options.wait_timem_l2_on_ingest,
+                memory_language=options.memory_language,
             )
             self._set_step(run_id, "ingest_done", 100)
             return
@@ -329,6 +341,7 @@ class JobManager:
             await run_ingest(
                 **base,
                 wait_timem_l2_on_ingest=options.wait_timem_l2_on_ingest,
+                memory_language=options.memory_language,
             )
             self._set_step(run_id, "ingest_done", 30)
 
@@ -361,6 +374,7 @@ class JobManager:
         await run_ingest(
             **base,
             wait_timem_l2_on_ingest=options.wait_timem_l2_on_ingest,
+            memory_language=options.memory_language,
         )
         self._set_step(run_id, "ingest_done", 30)
 

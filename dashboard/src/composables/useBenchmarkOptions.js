@@ -40,6 +40,7 @@ export function useBenchmarkOptions() {
       : ["L2"]
   );
   const waitTimemL2OnIngest = ref(!!stored.waitTimemL2OnIngest);
+  const memoryLanguage = ref(stored.memoryLanguage === "zh" ? "zh" : "en");
 
   watch(
     [
@@ -60,6 +61,7 @@ export function useBenchmarkOptions() {
       pipelineMode,
       backfillLayers,
       waitTimemL2OnIngest,
+      memoryLanguage,
     ],
     () => {
       saveStored({
@@ -80,6 +82,7 @@ export function useBenchmarkOptions() {
         pipelineMode: pipelineMode.value,
         backfillLayers: backfillLayers.value,
         waitTimemL2OnIngest: waitTimemL2OnIngest.value,
+        memoryLanguage: memoryLanguage.value,
       });
     }
   );
@@ -136,6 +139,9 @@ export function useBenchmarkOptions() {
     if (opts.wait_timem_l2_on_ingest != null) {
       waitTimemL2OnIngest.value = !!opts.wait_timem_l2_on_ingest;
     }
+    if (opts.memory_language === "zh" || opts.memory_language === "en") {
+      memoryLanguage.value = opts.memory_language;
+    }
   }
 
   function isBackfillLayerSelected(layer) {
@@ -180,6 +186,7 @@ export function useBenchmarkOptions() {
       timem_overrides: Object.keys(timem_overrides).length ? timem_overrides : undefined,
       retrieval_overrides: Object.keys(retrieval_overrides).length ? retrieval_overrides : undefined,
       wait_timem_l2_on_ingest: waitTimemL2OnIngest.value,
+      memory_language: memoryLanguage.value,
       ...extra,
     };
     if (extra.type === "backfill") {
@@ -211,6 +218,7 @@ export function useBenchmarkOptions() {
     pipelineMode,
     backfillLayers,
     waitTimemL2OnIngest,
+    memoryLanguage,
     hasBackfillLayers,
     useFixture,
     personaCount,

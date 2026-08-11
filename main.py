@@ -143,7 +143,17 @@ async def _cmd_retrieve(args: argparse.Namespace) -> None:
         run_judge=not args.no_judge,
         **_retrieval_kwargs(args),
     )
-    print(json.dumps({k: asdict(v) for k, v in reports.items()}, indent=2, ensure_ascii=False))
+    # Avoid dumping full detail blobs to console (huge + may contain chars that break GBK).
+    summary = {
+        k: {
+            "system": getattr(v, "system", k),
+            "mode": getattr(v, "mode", args.mode),
+            "detail_count": len(getattr(v, "details", []) or []),
+        }
+        for k, v in reports.items()
+    }
+    print(json.dumps(summary, indent=2, ensure_ascii=False))
+    print(f"\nReports under reports/{args.run_id}/retrieval_{args.mode}.json")
 
 
 async def _cmd_full(args: argparse.Namespace) -> None:

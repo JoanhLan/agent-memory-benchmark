@@ -59,7 +59,7 @@
             v-model="newRunIdInput"
             class="form-input"
             type="text"
-            placeholder="留空自动生成，如 fixture_smoke_01"
+            placeholder="留空自动生成；自定义仅字母数字_-，如 20260811_en_smoke"
             :disabled="creatingRun"
             @keydown.enter.prevent="newRun"
           />
@@ -179,9 +179,16 @@ async function newRun() {
     await pollRuns();
     goSection("experiment");
   } catch (e) {
-    sidebarError.value =
-      (e.message || "创建失败") +
-      " — 8765 端口可能有旧服务占用。请 Ctrl+C 后执行: python main.py dashboard";
+    const msg = e.message || "创建失败";
+    const isFormat =
+      msg.includes("run_id must") ||
+      msg.includes("run_id cannot") ||
+      msg.includes("reserved") ||
+      msg.includes("path separators");
+    sidebarError.value = isFormat
+      ? msg
+      : msg +
+        " — 若接口异常：Ctrl+C 后执行 python main.py dashboard（确认 8765 无旧进程）";
   } finally {
     creatingRun.value = false;
   }

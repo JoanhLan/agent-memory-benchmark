@@ -203,9 +203,17 @@ async def run_retrieval(
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"retrieval_{mode}.json"
     payload = {k: asdict(v) for k, v in reports.items()}
+    # Merge with existing systems so memos/timem/mem0 can be supplemented independently.
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(existing, dict):
+                payload = {**existing, **payload}
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Could not merge existing %s (%s); overwriting", path, exc)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
-    logger.info("Saved report: %s", path)
+    logger.info("Saved report: %s (systems=%s)", path, list(payload.keys()))
 
     category_path = out_dir / f"summary_by_category_{mode}.json"
     with open(category_path, "w", encoding="utf-8") as f:

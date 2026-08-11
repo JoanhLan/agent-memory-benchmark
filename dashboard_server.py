@@ -669,8 +669,12 @@ def run_dashboard_server(
     print("API OK (timem_sweep supported)")
     if open_browser and DASHBOARD_DIST.is_dir():
         webbrowser.open(url)
+    # Windows: bare Thread.join() ignores Ctrl+C until the thread ends.
+    # Poll with a short timeout so KeyboardInterrupt can reach the main thread.
     try:
-        serve_thread.join()
+        while serve_thread.is_alive():
+            serve_thread.join(timeout=0.5)
     except KeyboardInterrupt:
         print("\nStopped.")
         server.shutdown()
+        serve_thread.join(timeout=2.0)

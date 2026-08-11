@@ -58,12 +58,16 @@ async def run_ingest(
     use_fixture: bool = False,
     ingest_overrides: dict[str, Any] | None = None,
     wait_timem_l2_on_ingest: bool = False,
+    memory_language: str | None = None,
 ) -> dict[str, IngestRunReport]:
     run_id = run_id or new_run_id()
     settings = get_settings()
     persona_count = persona_count or settings.benchmark_persona_count
     systems = systems or ["timem", "memos", "mem0"]
     ingest_cfg = resolve_ingest_config(ingest_overrides)
+    lang = str(memory_language or settings.timem_memory_language or "en").strip().lower()
+    if lang not in ("zh", "en"):
+        lang = "en"
 
     personas = load_locomo_personas(persona_count=persona_count, use_fixture=use_fixture)
     adapters = get_adapters(systems)
@@ -76,6 +80,7 @@ async def run_ingest(
                     _ingest_personas(
                         adapter, system, run_id, personas, ingest_cfg,
                         wait_timem_l2_on_ingest=wait_timem_l2_on_ingest,
+                        memory_language=lang,
                     )
                     for system, adapter in adapters.items()
                 ]
@@ -87,6 +92,7 @@ async def run_ingest(
                 reports[system] = await _ingest_personas(
                     adapter, system, run_id, personas, ingest_cfg,
                     wait_timem_l2_on_ingest=wait_timem_l2_on_ingest,
+                    memory_language=lang,
                 )
 
         flush_info = await flush_mem0_pending(adapters)
@@ -109,6 +115,7 @@ async def _ingest_personas(
     ingest_cfg: Any,
     *,
     wait_timem_l2_on_ingest: bool = False,
+    memory_language: str = "en",
 ) -> IngestRunReport:
     run_started = time.perf_counter()
     concurrency = ingest_cfg.session_concurrency_for(system)
@@ -118,12 +125,26 @@ async def _ingest_personas(
     }
     if system == "timem":
         concurrency_settings["timem_per_user_session_serial"] = True
+        concurrency_settings["memory_language"] = memory_language
 
     session_jobs: list[tuple[str, str, str, LoCoMoSession]] = []
     for persona in personas:
         user_id = make_user_id(system, run_id, persona.persona_id)
         for session in persona.sessions:
             session_jobs.append((persona.persona_id, user_id, session.session_id, session))
+
+    if system == "timem" and isinstance(adapter, TiMEMAdapter):
+        for persona in personas:
+            user_id = make_user_id(system, run_id, persona.persona_id)
+            try:
+                await adapter.ensure_memory_language(user_id, memory_language)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to set memory_language=%s for user_id=%s: %s",
+                    memory_language,
+                    user_id,
+                    exc,
+                )
 
     async def _ingest_session(job: tuple[str, str, str, LoCoMoSession]) -> dict[str, Any]:
         persona_id, user_id, session_id, session = job
@@ -231,12 +252,21 @@ async def _ingest_personas(
 
 
 def _save_reports(run_id: str, stage: str, payload: dict[str, Any]) -> Path:
+    """Write stage report, merging system keys so partial re-runs keep siblings."""
     out_dir = PROJECT_ROOT / "reports" / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{stage}.json"
+    merged = dict(payload)
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(existing, dict):
+                merged = {**existing, **payload}
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Could not merge existing %s (%s); overwriting", path, exc)
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2, ensure_ascii=False)
-    logger.info("Saved report: %s", path)
+        json.dump(merged, f, indent=2, ensure_ascii=False)
+    logger.info("Saved report: %s (systems=%s)", path, list(merged.keys()))
     return path
 
 

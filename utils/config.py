@@ -147,6 +147,7 @@ class Settings(BaseSettings):
     judge_temperature: float = Field(default=0.0, alias="JUDGE_TEMPERATURE")
 
     benchmark_expert_id: str = Field(default="benchmark", alias="BENCHMARK_EXPERT_ID")
+    timem_memory_language: str = Field(default="en", alias="TIMEM_MEMORY_LANGUAGE")
     benchmark_top_k: int = Field(default=10, alias="BENCHMARK_TOP_K")
     benchmark_persona_count: int = Field(default=10, alias="BENCHMARK_PERSONA_COUNT")
     benchmark_backfill_timeout_sec: int = Field(default=600, alias="BENCHMARK_BACKFILL_TIMEOUT_SEC")
