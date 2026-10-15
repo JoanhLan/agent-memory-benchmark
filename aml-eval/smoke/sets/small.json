@@ -1,0 +1,78 @@
+{
+  "dataset_id": "small",
+  "description": "Two English users. Questions cover fact recall, multi-hop, temporal order, profile alignment, and memories that must not be recalled.",
+  "users": [
+    {
+      "sample_id": "alex",
+      "sessions": [
+        {
+          "session_id": "alex-s1",
+          "messages": [
+            {"role": "user", "timestamp": 1772550000000, "content": "I live in Seattle and I work at Northwind Books. Priya is the manager of Northwind Books."},
+            {"role": "assistant", "timestamp": 1772550060000, "content": "Noted. You live in Seattle and work at Northwind Books, where Priya is the manager."},
+            {"role": "user", "timestamp": 1772550120000, "content": "I am allergic to peanuts. I drink coffee every morning."},
+            {"role": "assistant", "timestamp": 1772550180000, "content": "Noted. You are allergic to peanuts and you drink coffee every morning."},
+            {"role": "user", "timestamp": 1772550240000, "content": "I will meet Priya on Tuesday at 3 pm."},
+            {"role": "assistant", "timestamp": 1772550300000, "content": "Noted. Your meeting with Priya is on Tuesday at 3 pm."}
+          ]
+        },
+        {
+          "session_id": "alex-s2",
+          "messages": [
+            {"role": "user", "timestamp": 1773154800000, "content": "Please move my meeting with Priya to Thursday at 4 pm. The Tuesday at 3 pm meeting is cancelled."},
+            {"role": "assistant", "timestamp": 1773154860000, "content": "Updated. Your meeting with Priya is now Thursday at 4 pm. The Tuesday at 3 pm meeting is cancelled."},
+            {"role": "user", "timestamp": 1773154920000, "content": "I stopped drinking coffee. I drink tea every morning now."},
+            {"role": "assistant", "timestamp": 1773154980000, "content": "Updated. You drink tea every morning now, not coffee."}
+          ]
+        },
+        {
+          "session_id": "alex-s3",
+          "messages": [
+            {"role": "user", "timestamp": 1773327600000, "content": "The Northwind Books staff entrance code is 4419."},
+            {"role": "assistant", "timestamp": 1773327660000, "content": "Noted. The Northwind Books staff entrance code is 4419."}
+          ]
+        }
+      ],
+      "questions": [
+        {"id": "fact-alex-city", "category": "fact", "question": "Where does Alex live?", "gold": "Seattle"},
+        {"id": "fact-alex-job", "category": "fact", "question": "Where does Alex work?", "gold": "Northwind Books"},
+        {"id": "fact-alex-priya", "category": "fact", "question": "Who is Priya?", "gold": "the manager of Northwind Books"},
+        {"id": "hop-alex-manager", "category": "multihop", "question": "Who manages the bookstore where Alex works?", "gold": "Priya"},
+        {"id": "hop-alex-meeting", "category": "multihop", "question": "When is Alex's current meeting with the manager of Northwind Books?", "gold": "Thursday at 4 pm"},
+        {"id": "hop-alex-code", "category": "multihop", "question": "What is the staff entrance code of the bookstore where Alex works?", "gold": "4419"},
+        {"id": "time-alex-meeting", "category": "temporal", "question": "When is Alex meeting Priya now?", "gold": "Thursday at 4 pm"},
+        {"id": "time-alex-drink", "category": "temporal", "question": "What does Alex drink in the morning now?", "gold": "tea"},
+        {"id": "profile-alex-allergy", "category": "profile", "question": "What food allergy does Alex have?", "gold": "peanuts"},
+        {"id": "profile-alex-drink", "category": "profile", "question": "What is Alex's current morning drink?", "gold": "tea"},
+        {"id": "abstain-alex-passport", "category": "abstain", "question": "What is Alex's passport number?", "gold": "unknown", "forbidden": []},
+        {"id": "abstain-alex-blair-dog", "category": "abstain", "question": "What is the name of Blair's dog?", "gold": "unknown", "forbidden": ["Comet"]}
+      ]
+    },
+    {
+      "sample_id": "blair",
+      "sessions": [
+        {
+          "session_id": "blair-s1",
+          "messages": [
+            {"role": "user", "timestamp": 1772550000000, "content": "I live in Austin with my dog Comet. I need gluten-free meals."},
+            {"role": "assistant", "timestamp": 1772550060000, "content": "Noted. You live in Austin with your dog Comet, and you need gluten-free meals."},
+            {"role": "user", "timestamp": 1772550120000, "content": "I work at Redbird Clinic. My supervisor there is Helen Cho."},
+            {"role": "assistant", "timestamp": 1772550180000, "content": "Noted. You work at Redbird Clinic and your supervisor is Helen Cho."},
+            {"role": "user", "timestamp": 1772550240000, "content": "I used to cycle to work, but I take the bus now."},
+            {"role": "assistant", "timestamp": 1772550300000, "content": "Updated. You take the bus to work now."}
+          ]
+        }
+      ],
+      "questions": [
+        {"id": "fact-blair-city", "category": "fact", "question": "Where does Blair live?", "gold": "Austin"},
+        {"id": "fact-blair-dog", "category": "fact", "question": "What is the name of Blair's dog?", "gold": "Comet"},
+        {"id": "fact-blair-work", "category": "fact", "question": "Where does Blair work?", "gold": "Redbird Clinic"},
+        {"id": "hop-blair-supervisor", "category": "multihop", "question": "Who supervises Blair at the clinic where Blair works?", "gold": "Helen Cho"},
+        {"id": "time-blair-commute", "category": "temporal", "question": "How does Blair get to work now?", "gold": "the bus"},
+        {"id": "profile-blair-diet", "category": "profile", "question": "What kind of meals does Blair need?", "gold": "gluten-free"},
+        {"id": "abstain-blair-allergy", "category": "abstain", "question": "What is Alex allergic to?", "gold": "unknown", "forbidden": ["peanuts"]},
+        {"id": "abstain-blair-code", "category": "abstain", "question": "What is the Northwind Books staff entrance code?", "gold": "unknown", "forbidden": ["4419"]}
+      ]
+    }
+  ]
+}

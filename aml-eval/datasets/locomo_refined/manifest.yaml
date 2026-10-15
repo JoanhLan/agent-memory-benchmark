@@ -1,0 +1,12 @@
+dataset_id: locomo_refined
+title: LoCoMo-Refined
+source: https://github.com/mem-eval-suite/LoCoMo_refined
+file: data/raw/locomo_refined.json
+cache: agent-memory-benchmark/benchmark_data/cache/locomo_refined.json
+text_questions: 861
+raw_questions: 1382
+skipped: 521  # is_multi_modality
+conversations: 10
+papers:
+  daily: papers/daily.json
+  full: papers/full.json

@@ -4,9 +4,26 @@
 
 </div>
 
+# Agent Memory Benchmark
+
+文本赛道默认按 [Agent Memory Leaderboard](https://agentmemoryleaderboard.ai/zh-cn/docs) 的 Add / Search 契约调用被测服务。本地打分是非官方的：先根据检索记忆生成答案，再按公开评判提示词打分。评判模型目前走 ARK，之后把 `JUDGE_API_KEY`、`JUDGE_API_BASE`、`JUDGE_MODEL` 换成金山云即可。
+
+```bash
+python main.py aml-datasets
+python main.py aml-add --paper aml-eval/datasets/locomo_refined/papers/daily.json
+python main.py aml-search <run_id>
+python main.py aml-score <run_id>
+```
+
+自建题库在仓库内 `aml-eval/`（六套官方数据 + `smoke` 20 题）。`--paper` 指向 `papers/daily.json` 或 `papers/full.json` 时按卷筛题；未指定时仍可用 `--dataset` 与 `--limit`。
+
+能跑的数据集：`locomo_refined`、`longmemeval_s`、`personamem_v2_32k`、`personamem_v2_128k`。BEAM、CLBench、ScriptMem 只登记来源。2,000 词按空白和标点近似计数（中文一字一词），报告里写明这一点。
+
+下面仍是原来的 TiMEM / MemOS / Mem0 三方对比，命令还在，不是这次比赛的默认入口。
+
 # TiMEM vs MemOS vs Mem0 基准测试
 
-![CI](https://github.com/JoanhLan/timem-memos-mem0-benchmark/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/JoanhLan/agent-memory-benchmark/actions/workflows/ci.yml/badge.svg)
 
 独立基准测试项目，对比 TiMEM、MemOS Cloud 与 Mem0 Platform 的**记忆写入（ingest）**与**检索（retrieval）**能力。
 

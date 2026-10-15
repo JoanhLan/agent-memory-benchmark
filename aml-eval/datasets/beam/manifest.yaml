@@ -1,0 +1,18 @@
+dataset_id: beam
+title: BEAM
+source: https://huggingface.co/datasets/Mohammadta/BEAM
+public_splits:
+  - name: 100K
+    conversations: 20
+    role: daily
+  - name: 500K
+    conversations: 35
+    role: full
+  - name: 1M
+    conversations: 35
+    role: optional
+excluded: 10M  # 公开渠道没有
+papers:
+  daily: papers/daily.json
+  full: papers/full.json
+  optional: papers/optional_1m.json

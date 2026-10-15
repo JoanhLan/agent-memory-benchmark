@@ -229,7 +229,8 @@ def check_health() -> dict[str, Any]:
         if settings.timem_api_key:
             headers["X-API-Key"] = settings.timem_api_key
         url = f"{settings.timem_base_url.rstrip('/')}/health"
-        with httpx.Client(timeout=5.0) as client:
+        # Keep short: UI health badge must not hang when local TiMEM is down.
+        with httpx.Client(timeout=1.5) as client:
             resp = client.get(url, headers=headers)
             timem_ok = resp.status_code == 200
             timem_detail = f"HTTP {resp.status_code}"
@@ -663,7 +664,10 @@ def run_dashboard_server(
 
     if not verify_dashboard_api(host, port):
         print(f"ERROR: API self-check failed on {url} — {describe_dashboard_api(host, port)}")
-        print("Stale dashboard still on this port. Stop it and rerun: python main.py dashboard --rebuild")
+        print(
+            "Port may still be serving an old process, or the new server failed to bind. "
+            "Stop listeners on this port and rerun: python main.py dashboard --rebuild"
+        )
         server.shutdown()
         raise SystemExit(1)
     print("API OK (timem_sweep supported)")

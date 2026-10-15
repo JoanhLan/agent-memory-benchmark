@@ -1,0 +1,20 @@
+{
+  "paper_id": "locomo_refined.full",
+  "dataset_id": "locomo_refined",
+  "tier": "full",
+  "sample_ids": [
+    "conv-26",
+    "conv-30",
+    "conv-41",
+    "conv-42",
+    "conv-43",
+    "conv-44",
+    "conv-47",
+    "conv-48",
+    "conv-49",
+    "conv-50"
+  ],
+  "question_count": 861,
+  "scope": "all_text_questions",
+  "note": "10 段对话的全部文本题。原始 QA 1382，其中 521 道多模态题不计入。"
+}

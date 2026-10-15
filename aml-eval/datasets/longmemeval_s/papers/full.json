@@ -1,0 +1,8 @@
+{
+  "paper_id": "longmemeval_s.full",
+  "dataset_id": "longmemeval_s",
+  "tier": "full",
+  "question_count": 500,
+  "scope": "all",
+  "note": "清洗版 LongMemEval-S 全部 500 题。"
+}

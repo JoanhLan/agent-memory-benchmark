@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""TiMEM vs MemOS vs Mem0 benchmark CLI."""
+"""Agent Memory Benchmark CLI.
+
+Default path simulates the AML text track (Add / Search, then a local unofficial score).
+The older TiMEM / MemOS / Mem0 commands remain available.
+"""
 
 from __future__ import annotations
 
@@ -16,6 +20,8 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from benchmark_data.catalog import DATASETS, runnable_ids
+from runners.aml_run import run_add, run_score, run_search
 from runners.ingest_run import run_ingest
 from runners.retrieval_run import run_retrieval
 from runners.timem_sweep import parse_sweep_values, run_timem_sweep
@@ -23,7 +29,7 @@ from utils.ids import new_run_id, validate_run_id
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="TiMEM vs MemOS vs Mem0 memory benchmark")
+    p = argparse.ArgumentParser(description="Agent Memory Benchmark")
     p.add_argument("--fixture", action="store_true", help="Use local sample dataset")
     p.add_argument("--personas", type=int, default=None, help="Number of LoCoMo personas")
     p.add_argument("--systems", default="timem,memos,mem0", help="Comma-separated: timem,memos,mem0")
@@ -46,7 +52,38 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub = p.add_subparsers(dest="command", required=True)
 
-    ingest = sub.add_parser("ingest", help="Run ingest benchmark")
+    listing = sub.add_parser("aml-datasets", help="List AML text datasets")
+    listing.set_defaults(command="aml-datasets")
+
+    aml_add = sub.add_parser("aml-add", help="AML Add: chunk and write one text dataset")
+    aml_add.add_argument("--dataset", required=False, choices=runnable_ids())
+    aml_add.add_argument(
+        "--paper",
+        default=None,
+        help="aml-eval paper JSON (e.g. aml-eval/datasets/locomo_refined/papers/daily.json)",
+    )
+    aml_add.add_argument("--run-id", default=None)
+    aml_add.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Max samples when --paper is not set (ignored if --paper is set)",
+    )
+
+    aml_search = sub.add_parser("aml-search", help="AML Search for a run produced by aml-add")
+    aml_search.add_argument("run_id")
+
+    aml_score = sub.add_parser("aml-score", help="Unofficial answer-then-judge score")
+    aml_score.add_argument("run_id")
+
+    aml_full = sub.add_parser("aml", help="AML Add, Search, then unofficial score")
+    aml_full.add_argument("--dataset", required=False, choices=runnable_ids())
+    aml_full.add_argument("--paper", default=None, help="aml-eval paper JSON (daily or full)")
+    aml_full.add_argument("--run-id", default=None)
+    aml_full.add_argument("--limit", type=int, default=None)
+    aml_full.add_argument("--skip-score", action="store_true")
+
+    ingest = sub.add_parser("ingest", help="Legacy three-system ingest")
     ingest.add_argument("--run-id", default=None)
     ingest.add_argument(
         "--no-wait-timem-l2",
@@ -188,12 +225,87 @@ async def _cmd_timem_sweep(args: argparse.Namespace) -> None:
     print(f"\nsweep_id={sweep_id}")
 
 
+def _aml_run_targets(args: argparse.Namespace) -> tuple[str, dict | None, str | None, int | None]:
+    from benchmark_data.aml_papers import load_paper, resolve_paper_path
+
+    paper_path: str | None = getattr(args, "paper", None)
+    paper: dict | None = None
+    if paper_path:
+        resolved = resolve_paper_path(paper_path)
+        paper = load_paper(resolved)
+        paper_path = str(resolved)
+        dataset_id = str(paper["dataset_id"])
+        if getattr(args, "dataset", None) and args.dataset != dataset_id:
+            raise SystemExit(f"--dataset {args.dataset} does not match paper dataset_id {dataset_id}")
+    elif getattr(args, "dataset", None):
+        dataset_id = args.dataset
+    else:
+        raise SystemExit("Provide --dataset or --paper")
+    limit = None if paper else getattr(args, "limit", None)
+    return dataset_id, paper, paper_path, limit
+
+
+def _cmd_aml_datasets() -> None:
+    rows = [
+        {
+            "id": item.dataset_id,
+            "title": item.title,
+            "runnable": item.runnable,
+            "source": item.source,
+            "note": item.note,
+        }
+        for item in DATASETS.values()
+    ]
+    print(json.dumps(rows, indent=2, ensure_ascii=False))
+
+
+async def _cmd_aml(args: argparse.Namespace) -> None:
+    run_id = validate_run_id(args.run_id) if args.run_id else new_run_id()
+    dataset_id, paper, paper_path, limit = _aml_run_targets(args)
+    report = run_add(
+        run_id=run_id,
+        dataset_id=dataset_id,
+        limit=limit,
+        paper=paper,
+        paper_path=paper_path,
+    )
+    print(json.dumps({k: v for k, v in report.items() if k != "adds"}, indent=2, ensure_ascii=False))
+    search = run_search(run_id=run_id)
+    print(json.dumps({"searched": len(search["results"])}, ensure_ascii=False))
+    if not args.skip_score:
+        score = await run_score(run_id=run_id)
+        print(json.dumps({k: v for k, v in score.items() if k != "results"}, indent=2, ensure_ascii=False))
+    print(f"\nrun_id={run_id}")
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = _build_parser()
     args = parser.parse_args()
 
-    if args.command == "ingest":
+    if args.command == "aml-datasets":
+        _cmd_aml_datasets()
+    elif args.command == "aml-add":
+        run_id = validate_run_id(args.run_id) if args.run_id else new_run_id()
+        dataset_id, paper, paper_path, limit = _aml_run_targets(args)
+        report = run_add(
+            run_id=run_id,
+            dataset_id=dataset_id,
+            limit=limit,
+            paper=paper,
+            paper_path=paper_path,
+        )
+        print(json.dumps({k: v for k, v in report.items() if k != "adds"}, indent=2, ensure_ascii=False))
+        print(f"\nrun_id={run_id}")
+    elif args.command == "aml-search":
+        report = run_search(run_id=args.run_id)
+        print(json.dumps({"searched": len(report["results"])}, ensure_ascii=False))
+    elif args.command == "aml-score":
+        score = asyncio.run(run_score(run_id=args.run_id))
+        print(json.dumps({k: v for k, v in score.items() if k != "results"}, indent=2, ensure_ascii=False))
+    elif args.command == "aml":
+        asyncio.run(_cmd_aml(args))
+    elif args.command == "ingest":
         asyncio.run(_cmd_ingest(args))
     elif args.command == "retrieve":
         asyncio.run(_cmd_retrieve(args))

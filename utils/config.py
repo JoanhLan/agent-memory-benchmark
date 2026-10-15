@@ -145,6 +145,17 @@ class Settings(BaseSettings):
     )
     judge_model: str = Field(default="", alias="JUDGE_MODEL")
     judge_temperature: float = Field(default=0.0, alias="JUDGE_TEMPERATURE")
+    judge_api_key: str = Field(default="", alias="JUDGE_API_KEY")
+    judge_api_base: str = Field(default="", alias="JUDGE_API_BASE")
+    answer_api_key: str = Field(default="", alias="ANSWER_API_KEY")
+    answer_api_base: str = Field(default="", alias="ANSWER_API_BASE")
+    answer_model: str = Field(default="", alias="ANSWER_MODEL")
+
+    aml_add_url: str = Field(default="", alias="AML_ADD_URL")
+    aml_search_url: str = Field(default="", alias="AML_SEARCH_URL")
+    aml_health_url: str = Field(default="", alias="AML_HEALTH_URL")
+    aml_api_key: str = Field(default="", alias="AML_API_KEY")
+    aml_auth: str = Field(default="x-api-key", alias="AML_AUTH")
 
     benchmark_expert_id: str = Field(default="benchmark", alias="BENCHMARK_EXPERT_ID")
     timem_memory_language: str = Field(default="en", alias="TIMEM_MEMORY_LANGUAGE")

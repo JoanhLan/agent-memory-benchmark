@@ -84,21 +84,19 @@ def _local_client():
 
 
 def verify_dashboard_api(host: str, port: int) -> bool:
-    """Return True if server speaks the current JSON API (incl. timem_sweep)."""
+    """Return True if server speaks the current JSON API (incl. timem_sweep).
+
+    Only probes /api/meta. Do not call /api/health here: that endpoint may wait on
+    TiMEM /health, and on Windows a down :8001 often SYN-times-out (~5s), which
+    races the 5s client timeout and falsely reports a stale dashboard.
+    """
     try:
         with _local_client() as client:
-            url = f"http://{host}:{port}/api/health"
-            resp = client.get(url)
-            if resp.status_code != 200:
-                return False
-            ct = resp.headers.get("content-type", "")
-            if "json" not in ct:
-                return False
-            data = resp.json()
-            if not (isinstance(data, dict) and "timem" in data):
-                return False
             meta = client.get(f"http://{host}:{port}/api/meta")
             if meta.status_code != 200:
+                return False
+            ct = meta.headers.get("content-type", "")
+            if "json" not in ct:
                 return False
             body = meta.json()
             features = body.get("features") or []

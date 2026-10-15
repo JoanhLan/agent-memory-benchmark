@@ -1,0 +1,8 @@
+{
+  "paper_id": "clbench.full",
+  "dataset_id": "clbench",
+  "tier": "full",
+  "question_count": 1899,
+  "scope": "public_release",
+  "note": "公开 CL-bench 全部任务（约 1899）。与 AML 简答准确率分开出分。"
+}

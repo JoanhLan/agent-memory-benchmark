@@ -1,0 +1,9 @@
+dataset_id: clbench
+title: CLBench
+source: https://huggingface.co/datasets/tencent/CL-bench
+public_tasks: 1899
+scoring: rubrics
+score_sheet: separate  # 不与 LoCoMo 等对错准确率加总
+papers:
+  daily: papers/daily.json
+  full: papers/full.json

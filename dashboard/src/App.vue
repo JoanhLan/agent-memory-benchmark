@@ -5,7 +5,7 @@
         <div class="logo-icon">BM</div>
         <div>
           <h1>Benchmark Lab</h1>
-          <div class="sub">TiMEM vs MemOS vs Mem0 · ingest & retrieval</div>
+          <div class="sub">Legacy TiMEM / MemOS / Mem0 lab. AML text track: python main.py aml</div>
         </div>
       </div>
       <div class="health-row">

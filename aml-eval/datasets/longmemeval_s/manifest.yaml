@@ -1,0 +1,9 @@
+dataset_id: longmemeval_s
+title: LongMemEval-S
+source: https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned
+file: longmemeval_s_cleaned.json
+cache: agent-memory-benchmark/benchmark_data/cache/longmemeval_s_cleaned.json
+questions: 500
+papers:
+  daily: papers/daily.json
+  full: papers/full.json

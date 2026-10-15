@@ -1,0 +1,8 @@
+{
+  "paper_id": "beam.full",
+  "dataset_id": "beam",
+  "tier": "full",
+  "split": "500K",
+  "conversation_count": 35,
+  "note": "发版默认全量是公开 500K 档。10M 未公开，不在题库内。"
+}

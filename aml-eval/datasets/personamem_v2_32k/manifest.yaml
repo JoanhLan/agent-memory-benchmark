@@ -1,0 +1,10 @@
+dataset_id: personamem_v2_32k
+title: PersonaMem-v2 32k
+source: https://huggingface.co/datasets/bowen-upenn/PersonaMem-v2
+index: benchmark/text/benchmark.csv
+history_column: chat_history_32k_link
+questions: 5000
+exclusive_with: personamem_v2_128k
+papers:
+  daily: papers/daily.json
+  full: papers/full.json

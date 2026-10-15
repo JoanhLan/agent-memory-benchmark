@@ -1,0 +1,9 @@
+{
+  "paper_id": "personamem_v2_32k.full",
+  "dataset_id": "personamem_v2_32k",
+  "tier": "full",
+  "track": "32k",
+  "question_count": 5000,
+  "scope": "all_rows",
+  "note": "该轨全部 5000 题。发版点名时只选 32k 或 128k 其中一轨。"
+}

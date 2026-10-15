@@ -1,3 +1,9 @@
+# Agent Memory Benchmark
+
+The AML text track is the default path (`python main.py aml`). It sends the public Add/Search contract and does not use the vendor-specific ingest or retrieval flags below.
+
+The rest of this document is the older TiMEM / MemOS / Mem0 comparison. Those commands still exist.
+
 # TiMEM vs MemOS vs Mem0 Benchmark Protocol (v0.5)
 
 ## Scope (Phase 1)

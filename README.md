@@ -4,9 +4,15 @@
 
 </div>
 
+# Agent Memory Benchmark
+
+The default path calls a contestant Add/Search API using the [Agent Memory Leaderboard](https://agentmemoryleaderboard.ai/docs) text-track contract. `python main.py aml-datasets` lists the seven text datasets. Local scores are unofficial.
+
+The sections below describe the older TiMEM / MemOS / Mem0 comparison. Those commands still run.
+
 # TiMEM vs MemOS vs Mem0 Benchmark
 
-![CI](https://github.com/JoanhLan/timem-memos-mem0-benchmark/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/JoanhLan/agent-memory-benchmark/actions/workflows/ci.yml/badge.svg)
 
 Independent benchmark project comparing **memory ingest** and **retrieval** between TiMEM, MemOS Cloud, and Mem0 Platform.
 

@@ -1,0 +1,8 @@
+{
+  "paper_id": "beam.daily",
+  "dataset_id": "beam",
+  "tier": "daily",
+  "split": "100K",
+  "conversation_count": 20,
+  "note": "日常卷就是公开 100K 档全部对话。一次只跑这一档。"
+}

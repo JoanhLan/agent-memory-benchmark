@@ -1,0 +1,8 @@
+{
+  "paper_id": "beam.optional_1m",
+  "dataset_id": "beam",
+  "tier": "optional",
+  "split": "1M",
+  "conversation_count": 35,
+  "note": "加长档。只有点名时才跑，不替代 500K 发版卷。"
+}
