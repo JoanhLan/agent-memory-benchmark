@@ -58,6 +58,10 @@ def load_samples(
         samples = _load_personamem("32k")
     elif dataset_id == "personamem_v2_128k":
         samples = _load_personamem("128k")
+    elif dataset_id == "beam":
+        samples = _load_beam(paper)
+    elif dataset_id == "clbench":
+        samples = _load_clbench()
     else:
         raise ValueError(f"No loader for {dataset_id}")
     if paper is not None:
@@ -66,6 +70,41 @@ def load_samples(
         samples = apply_paper(samples, paper)
     elif limit is not None:
         return samples[:limit]
+    return samples
+
+
+def _load_beam(paper: dict[str, Any] | None) -> list[EvalSample]:
+    from datasets import load_dataset
+
+    from benchmark_data.aml_beam import BEAM_SPLITS, beam_row_to_sample
+
+    split = str((paper or {}).get("split") or "100K")
+    if split not in BEAM_SPLITS:
+        raise ValueError(f"BEAM split must be one of {', '.join(BEAM_SPLITS)}")
+    rows = load_dataset("Mohammadta/BEAM", split=split)
+    return [beam_row_to_sample(dict(row), split=split) for row in rows]
+
+
+def _load_clbench() -> list[EvalSample]:
+    from benchmark_data.aml_clbench import clbench_row_to_sample
+
+    path = CACHE_DIR / "CL-bench.jsonl"
+    if not path.exists():
+        logger.info("Downloading CL-bench.jsonl")
+        response = httpx.get(
+            "https://huggingface.co/datasets/tencent/CL-bench/resolve/main/CL-bench.jsonl",
+            timeout=180.0,
+            follow_redirects=True,
+        )
+        response.raise_for_status()
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(response.content)
+    samples: list[EvalSample] = []
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            text = line.strip()
+            if text:
+                samples.append(clbench_row_to_sample(json.loads(text)))
     return samples
 
 
@@ -337,6 +376,36 @@ def _iso_to_ms(value: str | None) -> int | None:
         return None
 
 
+_EN_MONTHS = {
+    "january": 1,
+    "february": 2,
+    "march": 3,
+    "april": 4,
+    "may": 5,
+    "june": 6,
+    "july": 7,
+    "august": 8,
+    "september": 9,
+    "october": 10,
+    "november": 11,
+    "december": 12,
+}
+
+
+def _english_month_day(text: str) -> int | None:
+    """BEAM time anchors look like March-15-2024. Month names stay English."""
+    match = re.fullmatch(r"([A-Za-z]+)-(\d{1,2})-(\d{4})", text)
+    if not match:
+        return None
+    month = _EN_MONTHS.get(match.group(1).lower())
+    if month is None:
+        return None
+    try:
+        return int(datetime(int(match.group(3)), month, int(match.group(2))).timestamp() * 1000)
+    except ValueError:
+        return None
+
+
 def _loose_time_to_ms(value: Any) -> int | None:
     if value is None:
         return None
@@ -346,13 +415,19 @@ def _loose_time_to_ms(value: Any) -> int | None:
     if text.isdigit():
         number = int(text)
         return number if number > 10_000_000_000 else number * 1000
-    iso = parse_locomo_datetime(text)
-    parsed = _iso_to_ms(iso) if iso else None
-    if parsed is not None:
-        return parsed
-    for fmt in ("%Y/%m/%d (%a) %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%Y/%m/%d"):
+    month_day = _english_month_day(text)
+    if month_day is not None:
+        return month_day
+    for fmt in (
+        "%Y/%m/%d (%a) %H:%M",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+    ):
         try:
             return int(datetime.strptime(text, fmt).timestamp() * 1000)
         except ValueError:
             continue
-    return None
+    iso = parse_locomo_datetime(text)
+    return _iso_to_ms(iso) if iso else None

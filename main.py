@@ -21,7 +21,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from benchmark_data.catalog import DATASETS, runnable_ids
-from runners.aml_run import run_add, run_score, run_search
+from runners.aml_run import run_add, run_pipeline, run_score, run_search
 from runners.ingest_run import run_ingest
 from runners.retrieval_run import run_retrieval
 from runners.timem_sweep import parse_sweep_values, run_timem_sweep
@@ -69,6 +69,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Max samples when --paper is not set (ignored if --paper is set)",
     )
+    aml_add.add_argument(
+        "--streaming",
+        action="store_true",
+        help="After each written chunk, search every question. Score uses the last search.",
+    )
 
     aml_search = sub.add_parser("aml-search", help="AML Search for a run produced by aml-add")
     aml_search.add_argument("run_id")
@@ -76,12 +81,17 @@ def _build_parser() -> argparse.ArgumentParser:
     aml_score = sub.add_parser("aml-score", help="Unofficial answer-then-judge score")
     aml_score.add_argument("run_id")
 
-    aml_full = sub.add_parser("aml", help="AML Add, Search, then unofficial score")
+    aml_full = sub.add_parser("aml", help="AML per-sample Add, Search, and unofficial score")
     aml_full.add_argument("--dataset", required=False, choices=runnable_ids())
     aml_full.add_argument("--paper", default=None, help="aml-eval paper JSON (daily or full)")
     aml_full.add_argument("--run-id", default=None)
     aml_full.add_argument("--limit", type=int, default=None)
     aml_full.add_argument("--skip-score", action="store_true")
+    aml_full.add_argument(
+        "--streaming",
+        action="store_true",
+        help="Search after each written chunk. Score uses the last search and skips a second search pass.",
+    )
 
     ingest = sub.add_parser("ingest", help="Legacy three-system ingest")
     ingest.add_argument("--run-id", default=None)
@@ -262,19 +272,32 @@ def _cmd_aml_datasets() -> None:
 async def _cmd_aml(args: argparse.Namespace) -> None:
     run_id = validate_run_id(args.run_id) if args.run_id else new_run_id()
     dataset_id, paper, paper_path, limit = _aml_run_targets(args)
-    report = run_add(
-        run_id=run_id,
-        dataset_id=dataset_id,
-        limit=limit,
-        paper=paper,
-        paper_path=paper_path,
-    )
-    print(json.dumps({k: v for k, v in report.items() if k != "adds"}, indent=2, ensure_ascii=False))
-    search = run_search(run_id=run_id)
-    print(json.dumps({"searched": len(search["results"])}, ensure_ascii=False))
-    if not args.skip_score:
-        score = await run_score(run_id=run_id)
-        print(json.dumps({k: v for k, v in score.items() if k != "results"}, indent=2, ensure_ascii=False))
+    if getattr(args, "streaming", False):
+        report = run_add(
+            run_id=run_id,
+            dataset_id=dataset_id,
+            limit=limit,
+            paper=paper,
+            paper_path=paper_path,
+            streaming=True,
+        )
+        print(json.dumps({k: v for k, v in report.items() if k != "adds"}, indent=2, ensure_ascii=False))
+        print(json.dumps({"searched": report.get("streaming_searches", 0), "streaming": True}, ensure_ascii=False))
+        if not args.skip_score:
+            score = await run_score(run_id=run_id)
+            print(json.dumps({k: v for k, v in score.items() if k != "results"}, indent=2, ensure_ascii=False))
+    else:
+        report = await run_pipeline(
+            run_id=run_id,
+            dataset_id=dataset_id,
+            limit=limit,
+            paper=paper,
+            paper_path=paper_path,
+            skip_score=bool(args.skip_score),
+        )
+        print(json.dumps({"searched": report["searched"], "pipeline": "sample"}, ensure_ascii=False))
+        if report.get("score"):
+            print(json.dumps({k: v for k, v in report["score"].items() if k != "results"}, indent=2, ensure_ascii=False))
     print(f"\nrun_id={run_id}")
 
 
@@ -294,6 +317,7 @@ def main() -> None:
             limit=limit,
             paper=paper,
             paper_path=paper_path,
+            streaming=bool(args.streaming),
         )
         print(json.dumps({k: v for k, v in report.items() if k != "adds"}, indent=2, ensure_ascii=False))
         print(f"\nrun_id={run_id}")

@@ -17,7 +17,7 @@ python main.py aml-score <run_id>
 
 自建题库在仓库内 `aml-eval/`（六套官方数据 + `smoke` 20 题）。`--paper` 指向 `papers/daily.json` 或 `papers/full.json` 时按卷筛题；未指定时仍可用 `--dataset` 与 `--limit`。
 
-能跑的数据集：`locomo_refined`、`longmemeval_s`、`personamem_v2_32k`、`personamem_v2_128k`。BEAM、CLBench、ScriptMem 只登记来源。2,000 词按空白和标点近似计数（中文一字一词），报告里写明这一点。
+能跑的数据集：`locomo_refined`、`longmemeval_s`、`personamem_v2_32k`、`personamem_v2_128k`、`beam`（公开 100K / 500K / 1M）、`clbench`（评分点全过才算对，单独出分）。ScriptMem 只登记来源。`--streaming` 默认关闭；打开后每写完一段就检索一次，打分用最后一次。2,000 词按空白和标点近似计数（中文一字一词），报告里写明这一点。
 
 下面仍是原来的 TiMEM / MemOS / Mem0 三方对比，命令还在，不是这次比赛的默认入口。
 

@@ -76,6 +76,18 @@ def apply_paper(samples: list[EvalSample], paper: dict[str, Any]) -> list[EvalSa
     task_ids = paper.get("task_ids")
     if task_ids:
         allowed_t = {str(t) for t in task_ids}
-        samples = [s for s in samples if any(q.question_id in allowed_t for q in s.questions)]
+        kept: list[EvalSample] = []
+        for sample in samples:
+            questions = [q for q in sample.questions if q.question_id in allowed_t]
+            if questions:
+                kept.append(
+                    EvalSample(
+                        dataset_id=sample.dataset_id,
+                        sample_id=sample.sample_id,
+                        messages=sample.messages,
+                        questions=questions,
+                    )
+                )
+        samples = kept
 
     return samples

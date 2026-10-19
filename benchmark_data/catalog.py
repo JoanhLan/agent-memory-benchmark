@@ -46,16 +46,16 @@ DATASETS: dict[str, DatasetEntry] = {
     "beam": DatasetEntry(
         dataset_id="beam",
         title="BEAM",
-        runnable=False,
+        runnable=True,
         source="https://huggingface.co/datasets/Mohammadta/BEAM",
-        note="Registered only. Public set spans about 128K to 10M tokens; the official tier is unpublished.",
+        note="Public 100K, 500K, and 1M splits. The unpublished 10M split is not loaded. Scored correct or wrong.",
     ),
     "clbench": DatasetEntry(
         dataset_id="clbench",
         title="CLBench",
-        runnable=False,
+        runnable=True,
         source="https://huggingface.co/datasets/tencent/CL-bench",
-        note="Registered only. The card is 0-4k and 16-32k; the public set is a different length mix.",
+        note="A task scores only when every rubric passes. That score stays on its own sheet.",
     ),
     "scriptmem": DatasetEntry(
         dataset_id="scriptmem",

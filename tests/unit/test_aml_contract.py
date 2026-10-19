@@ -93,14 +93,14 @@ def test_local_score_parsers():
     assert verdict["correct"] is True
 
 
-def test_catalog_registers_seven_and_runs_four():
+def test_catalog_registers_seven_and_runs_six():
     assert len(DATASETS) == 7
     assert runnable_ids() == [
         "locomo_refined",
         "longmemeval_s",
         "personamem_v2_32k",
         "personamem_v2_128k",
+        "beam",
+        "clbench",
     ]
     assert DATASETS["scriptmem"].runnable is False
-    assert DATASETS["beam"].runnable is False
-    assert DATASETS["clbench"].runnable is False

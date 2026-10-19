@@ -6,7 +6,7 @@
 
 # Agent Memory Benchmark
 
-The default path calls a contestant Add/Search API using the [Agent Memory Leaderboard](https://agentmemoryleaderboard.ai/docs) text-track contract. `python main.py aml-datasets` lists the seven text datasets. Local scores are unofficial.
+The default path calls a contestant Add/Search API using the [Agent Memory Leaderboard](https://agentmemoryleaderboard.ai/docs) text-track contract. `python main.py aml-datasets` lists the seven text datasets. Six can run: LoCoMo-Refined, LongMemEval-S, PersonaMem 32k and 128k, BEAM (public 100K / 500K / 1M), and CLBench (its own all-rubrics sheet). ScriptMem stays registered only. `--streaming` is off unless you pass it; then each written chunk is searched and the last search is scored. Local scores are unofficial.
 
 The sections below describe the older TiMEM / MemOS / Mem0 comparison. Those commands still run.
 
