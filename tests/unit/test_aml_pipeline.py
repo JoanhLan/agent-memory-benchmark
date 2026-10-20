@@ -34,7 +34,7 @@ async def test_judge_parse_accepts_the_second_response():
         return next(texts)
 
     verdict = await verdict_correct_wrong(fetch)
-    assert verdict == {"correct": True, "score": 1.0, "method": "correct_wrong"}
+    assert verdict == {"correct": True, "score": 1.0, "method": "correct_wrong", "judge_raw": '{"label": "CORRECT"}'}
 
 
 async def test_next_sample_add_overlaps_current_work():

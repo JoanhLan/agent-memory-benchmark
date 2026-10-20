@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -24,6 +25,7 @@ from evaluators.aml_score import (
     score_mcq,
 )
 from utils.config import PROJECT_ROOT, get_settings
+from utils.run_meta import collect_run_meta
 
 REPORTS = PROJECT_ROOT / "reports"
 logger = logging.getLogger(__name__)
@@ -42,6 +44,38 @@ def _run_dir(run_id: str) -> Path:
 
 def _write(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _write_run_meta(directory: Path, stage: str, manifest: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Keep one meta block per stage in run_meta.json so add, search and score runs stay traceable."""
+    meta = collect_run_meta(stage=stage, manifest=manifest)
+    path = directory / "run_meta.json"
+    stages: dict[str, Any] = {}
+    if path.is_file():
+        try:
+            stages = json.loads(path.read_text(encoding="utf-8")).get("stages") or {}
+        except ValueError:
+            stages = {}
+    stages[stage] = meta
+    _write(path, {"run_id": directory.name, "stages": stages})
+    return meta
+
+
+def search_evidence(hit: dict[str, Any] | None) -> dict[str, Any]:
+    """Per-question Search evidence for the score row: count, latency, and each item's id/score/content."""
+    hit = hit or {}
+    data = hit.get("data") or []
+    return {
+        "search": {
+            "returned": len(data),
+            "latency_ms": hit.get("latency_ms"),
+            "evidence": [
+                {"id": item.get("id"), "score": item.get("score"), "content": item.get("content")}
+                for item in data
+                if isinstance(item, dict)
+            ],
+        }
+    }
 
 
 def _partial_score_path(directory: Path) -> Path:
@@ -142,12 +176,13 @@ async def verdict_correct_wrong(fetch_judge: Callable[[], Awaitable[str]]) -> di
             last_error = exc
             logger.warning("judge parse failed attempt %s/%s: %s", attempt, JUDGE_PARSE_ATTEMPTS, exc)
             continue
-        return {"correct": ok, "score": 1.0 if ok else 0.0, "method": "correct_wrong"}
+        return {"correct": ok, "score": 1.0 if ok else 0.0, "method": "correct_wrong", "judge_raw": judged}
     return {
         "correct": False,
         "score": 0.0,
         "method": "judge_parse_error",
         "error": str(last_error) if last_error else "judge parse failed",
+        "judge_raw": judged if JUDGE_PARSE_ATTEMPTS else None,
     }
 
 
@@ -327,6 +362,11 @@ def run_add(
                         "data": found.get("data") or [],
                     }
                 )
+    _write_run_meta(
+        _run_dir(run_id),
+        "add",
+        {"dataset_id": dataset_id, "paper_id": (paper or {}).get("paper_id"), "paper_path": paper_path, "questions": questions},
+    )
     report = {
         "run_id": run_id,
         "dataset_id": dataset_id,
@@ -405,11 +445,14 @@ def _search_hit(client: AmlClient, *, run_id: str, row: dict[str, Any]) -> dict[
         sample_id=row["sample_id"],
         question=question,
     )
+    started = time.perf_counter()
     response = client.search(body)
+    latency_ms = round((time.perf_counter() - started) * 1000, 1)
     return {
         "question_id": row["question_id"],
         "user_id": body["user_id"],
         "returned": len(response.get("data") or []),
+        "latency_ms": latency_ms,
         "data": response.get("data") or [],
     }
 
@@ -424,8 +467,10 @@ async def _score_question_row(
     judge_base: str,
     judge_key: str,
     judge_model: str,
+    hit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     question = _question_from_row(item)
+    judged: str | None = None
     generated = await complete_chat(
         base_url=answer_base,
         api_key=answer_key,
@@ -448,6 +493,7 @@ async def _score_question_row(
             "score": 1.0 if ok else 0.0,
             "method": "rubric_all",
             "rubrics": len(rubrics),
+            "judge_raw": judged,
         }
     else:
         prompt = judge_prompt(item["dataset_id"], question, generated)
@@ -461,7 +507,7 @@ async def _score_question_row(
                 prompt=prompt,
             )
             value = parse_boxed_score(judged)
-            verdict = {"correct": value >= 0.5, "score": value, "method": "preference_judge"}
+            verdict = {"correct": value >= 0.5, "score": value, "method": "preference_judge", "judge_raw": judged}
         else:
 
             async def fetch_judge() -> str:
@@ -473,7 +519,16 @@ async def _score_question_row(
                 )
 
             verdict = await verdict_correct_wrong(fetch_judge)
-    return {"question_id": item["question_id"], "category": item.get("category"), **verdict}
+    row = {
+        "question_id": item["question_id"],
+        "category": item.get("category"),
+        **verdict,
+        "gold": item.get("gold"),
+        "generated": generated,
+    }
+    if hit is not None:
+        row.update(search_evidence(hit))
+    return row
 
 
 def _ordered_score_rows(manifest: dict[str, Any], by_id: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
@@ -506,6 +561,7 @@ def _finish_score_report(
         "total": total,
         "correct": correct,
         "accuracy": (correct / total) if total else 0.0,
+        "meta": _write_run_meta(directory, "score", manifest),
         "results": rows,
     }
     _write(directory / "aml_score.json", report)
@@ -542,17 +598,20 @@ def run_search(*, run_id: str) -> dict[str, Any]:
             question=question,
         )
         logger.info("search %s/%s %s", index, total, row["question_id"])
+        started = time.perf_counter()
         response = client.search(body)
         hits.append(
             {
                 "question_id": row["question_id"],
                 "user_id": body["user_id"],
                 "returned": len(response.get("data") or []),
+                "latency_ms": round((time.perf_counter() - started) * 1000, 1),
                 "data": response.get("data") or [],
             }
         )
     report = {"run_id": run_id, "dataset_id": manifest["dataset_id"], "top_k": 100, "results": hits}
     _write(_run_dir(run_id) / "aml_search.json", report)
+    _write_run_meta(_run_dir(run_id), "search", manifest)
     return report
 
 
@@ -580,6 +639,7 @@ async def run_search_and_score(
         logger.info("score the %s questions already judged in %s", len(manifest["questions"]), only_from)
     elif directory != source and not (directory / "aml_questions.json").is_file():
         _write(directory / "aml_questions.json", manifest)
+    _write_run_meta(directory, "search_and_score", manifest)
     questions = list(manifest["questions"])
     grouped: dict[str, list[dict[str, Any]]] = {}
     order: list[str] = []
@@ -666,6 +726,7 @@ async def run_search_and_score(
                         judge_base=endpoints["judge_base"],
                         judge_key=endpoints["judge_key"],
                         judge_model=endpoints["judge_model"],
+                        hit=hit,
                     )
                     break
                 except Exception as exc:
@@ -744,6 +805,7 @@ async def _score_pending(
     memories_for: Callable[[dict[str, Any]], str],
     scored: dict[str, dict[str, Any]],
     endpoints: dict[str, str],
+    hit_for: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Score pending questions with a bounded pool and checkpoint after each one."""
     total_questions = len(manifest["questions"])
@@ -761,6 +823,7 @@ async def _score_pending(
                 judge_base=endpoints["judge_base"],
                 judge_key=endpoints["judge_key"],
                 judge_model=endpoints["judge_model"],
+                hit=hit_for(item) if hit_for else None,
             )
         async with lock:
             scored[item["question_id"]] = row
@@ -815,6 +878,7 @@ async def run_score(*, run_id: str) -> dict[str, Any]:
         memories_for=memories_for,
         scored=scored,
         endpoints=endpoints,
+        hit_for=lambda item: search_by_id.get(item["question_id"]),
     )
     if missing_search:
         raise RuntimeError(
@@ -857,6 +921,7 @@ async def run_pipeline(
         "questions": questions,
     }
     _write(directory / "aml_questions.json", manifest)
+    _write_run_meta(directory, "pipeline", manifest)
     chunks_out: list[dict[str, Any]] = []
     hits: list[dict[str, Any]] = []
     question_no = 0
@@ -946,6 +1011,7 @@ async def run_pipeline(
                 judge_base=endpoints["judge_base"],
                 judge_key=endpoints["judge_key"],
                 judge_model=endpoints["judge_model"],
+                hit=hit,
             )
             async with state_lock:
                 scored[row["question_id"]] = result
