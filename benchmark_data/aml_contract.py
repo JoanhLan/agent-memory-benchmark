@@ -7,6 +7,8 @@ from typing import Any
 from benchmark_data.aml_models import EvalMessage, EvalQuestion
 
 TOP_K = 100
+# AML platform: one Add/Search request may run up to 30 minutes (api-guide).
+AML_HTTP_TIMEOUT_SEC = 1800.0
 
 
 def user_id_for(run_id: str, dataset_id: str, sample_id: str) -> str:

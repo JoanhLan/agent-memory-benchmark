@@ -6,7 +6,12 @@ from typing import Any
 
 import httpx
 
-from benchmark_data.aml_contract import auth_headers, check_add_response, check_search_response
+from benchmark_data.aml_contract import (
+    AML_HTTP_TIMEOUT_SEC,
+    auth_headers,
+    check_add_response,
+    check_search_response,
+)
 
 
 class AmlContractError(RuntimeError):
@@ -22,7 +27,7 @@ class AmlClient:
         api_key: str = "",
         auth: str = "x-api-key",
         health_url: str = "",
-        timeout_sec: float = 1800.0,
+        timeout_sec: float = AML_HTTP_TIMEOUT_SEC,
     ) -> None:
         self.add_url = add_url
         self.search_url = search_url

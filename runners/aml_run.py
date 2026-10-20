@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from adapters.aml_client import AmlClient
-from benchmark_data.aml_contract import add_body, search_body
+from benchmark_data.aml_contract import AML_HTTP_TIMEOUT_SEC, add_body, search_body
 from benchmark_data.aml_loaders import load_samples
 from benchmark_data.aml_models import EvalQuestion, EvalSample
 from benchmark_data.chunking import chunk_messages
@@ -29,6 +29,9 @@ REPORTS = PROJECT_ROOT / "reports"
 logger = logging.getLogger(__name__)
 SCORE_CONCURRENCY = 5
 JUDGE_PARSE_ATTEMPTS = 3
+ADD_CONCURRENCY = 2
+SAMPLE_SEARCH_CONCURRENCY = 2
+QUESTION_SEARCH_CONCURRENCY = 2
 
 
 def _run_dir(run_id: str) -> Path:
@@ -169,6 +172,61 @@ async def run_overlapped_samples(
     finally:
         if pending is not None and not pending.done():
             pending.cancel()
+
+
+async def run_parallel_conversations(
+    samples: list[Any],
+    add_sample: Callable[[Any], Awaitable[None]],
+    after_add: Callable[[Any], Awaitable[None]],
+    *,
+    add_concurrency: int = ADD_CONCURRENCY,
+    search_concurrency: int = SAMPLE_SEARCH_CONCURRENCY,
+) -> None:
+    """Add up to two conversations at once. Search a conversation only after its own Add finishes."""
+    if not samples:
+        return
+    add_slots = asyncio.Semaphore(max(1, add_concurrency))
+    search_slots = asyncio.Semaphore(max(1, search_concurrency))
+
+    async def _one(sample: Any) -> None:
+        async with add_slots:
+            await add_sample(sample)
+        async with search_slots:
+            await after_add(sample)
+
+    await asyncio.gather(*(_one(sample) for sample in samples))
+
+
+async def search_first_then_parallel(
+    questions: list[Any],
+    search_one: Callable[[Any], Awaitable[Any]],
+    score_one: Callable[[Any, Any], Awaitable[None]],
+    *,
+    rollup: asyncio.Semaphore,
+    score_slots: asyncio.Semaphore,
+    question_concurrency: int = QUESTION_SEARCH_CONCURRENCY,
+) -> None:
+    """Search the first question alone, then search the rest two at a time."""
+    if not questions:
+        return
+
+    async def _score(question: Any, hit: Any) -> None:
+        async with score_slots:
+            await score_one(question, hit)
+
+    async with rollup:
+        first_hit = await search_one(questions[0])
+    tasks = [asyncio.create_task(_score(questions[0], first_hit))]
+    question_slots = asyncio.Semaphore(max(1, question_concurrency))
+
+    async def _rest(question: Any) -> None:
+        async with question_slots:
+            hit = await search_one(question)
+        await _score(question, hit)
+
+    for question in questions[1:]:
+        tasks.append(asyncio.create_task(_rest(question)))
+    await asyncio.gather(*tasks)
 
 
 async def search_then_score(
@@ -323,6 +381,7 @@ def _client() -> AmlClient:
         api_key=settings.aml_api_key,
         auth=settings.aml_auth,
         health_url=settings.aml_health_url,
+        timeout_sec=AML_HTTP_TIMEOUT_SEC,
     )
 
 
@@ -497,6 +556,173 @@ def run_search(*, run_id: str) -> dict[str, Any]:
     return report
 
 
+async def run_search_and_score(
+    *,
+    run_id: str,
+    output_dir: str | None = None,
+    only_from: str | None = None,
+) -> dict[str, Any]:
+    """Search an existing Add, and score each question as soon as its search returns."""
+    search_client = _client()
+    search_client.health()
+    source = _run_dir(run_id)
+    directory = Path(output_dir) if output_dir else source
+    directory.mkdir(parents=True, exist_ok=True)
+    manifest = json.loads((source / "aml_questions.json").read_text(encoding="utf-8"))
+    if only_from:
+        prior = json.loads(Path(only_from).read_text(encoding="utf-8"))
+        keep = {str(row["question_id"]) for row in prior.get("results") or []}
+        manifest = {
+            **manifest,
+            "questions": [row for row in manifest["questions"] if str(row["question_id"]) in keep],
+        }
+        _write(directory / "aml_questions.json", manifest)
+        logger.info("score the %s questions already judged in %s", len(manifest["questions"]), only_from)
+    elif directory != source and not (directory / "aml_questions.json").is_file():
+        _write(directory / "aml_questions.json", manifest)
+    questions = list(manifest["questions"])
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    order: list[str] = []
+    for row in questions:
+        sample_id = str(row["sample_id"])
+        if sample_id not in grouped:
+            order.append(sample_id)
+            grouped[sample_id] = []
+        grouped[sample_id].append(row)
+
+    hits: list[dict[str, Any]] = []
+    search_path = directory / "aml_search.json"
+    if search_path.is_file():
+        saved_search = json.loads(search_path.read_text(encoding="utf-8"))
+        hits = list(saved_search.get("results") or [])
+    hit_by_id = {str(hit["question_id"]): hit for hit in hits}
+    question_no = len(hits)
+    total_questions = len(questions)
+    endpoints = _score_endpoints()
+    scored = _load_scored_rows(directory, manifest)
+    if hits or scored:
+        logger.info(
+            "resume search %s/%s, score %s/%s",
+            len(hits),
+            total_questions,
+            len(scored),
+            total_questions,
+        )
+    state_lock = asyncio.Lock()
+    rollup = asyncio.Semaphore(1)
+    score_slots = asyncio.Semaphore(SCORE_CONCURRENCY)
+    search_slots = asyncio.Semaphore(SAMPLE_SEARCH_CONCURRENCY)
+
+    def _write_search() -> None:
+        _write(
+            directory / "aml_search.json",
+            {"run_id": run_id, "dataset_id": manifest["dataset_id"], "top_k": 100, "results": hits},
+        )
+
+    async def _one(sample_id: str) -> None:
+        nonlocal question_no
+        sample_questions = grouped[sample_id]
+        pending = [row for row in sample_questions if str(row["question_id"]) not in hit_by_id]
+        already = [
+            row
+            for row in sample_questions
+            if str(row["question_id"]) in hit_by_id and str(row["question_id"]) not in scored
+        ]
+
+        async def search_one(row: dict[str, Any]) -> dict[str, Any]:
+            nonlocal question_no
+            last_error: Exception | None = None
+            hit: dict[str, Any] | None = None
+            for attempt in range(3):
+                try:
+                    hit = await asyncio.to_thread(_search_hit, search_client, run_id=run_id, row=row)
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    logger.warning("search retry %s/3 %s: %s", attempt + 1, row["question_id"], exc)
+                    await asyncio.sleep(2)
+            if hit is None:
+                raise last_error or RuntimeError("search failed")
+            async with state_lock:
+                question_no += 1
+                logger.info("search %s/%s %s", question_no, total_questions, row["question_id"])
+                hits.append(hit)
+                _write_search()
+            return hit
+
+        async def score_one(row: dict[str, Any], hit: dict[str, Any]) -> None:
+            question = _question_from_row(row)
+            memories = format_memories(hit.get("data") or [], question=question.question, options=question.options)
+            last_error: Exception | None = None
+            result: dict[str, Any] | None = None
+            for attempt in range(3):
+                try:
+                    result = await _score_question_row(
+                        row,
+                        memories,
+                        answer_base=endpoints["answer_base"],
+                        answer_key=endpoints["answer_key"],
+                        answer_model=endpoints["answer_model"],
+                        judge_base=endpoints["judge_base"],
+                        judge_key=endpoints["judge_key"],
+                        judge_model=endpoints["judge_model"],
+                    )
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    logger.warning("score retry %s/3 %s: %s", attempt + 1, row["question_id"], exc)
+                    await asyncio.sleep(2)
+            if result is None:
+                raise last_error or RuntimeError("score failed")
+            async with state_lock:
+                scored[row["question_id"]] = result
+                ordered = _ordered_score_rows(manifest, scored)
+                logger.info(
+                    "score %s/%s %s correct=%s",
+                    len(ordered),
+                    total_questions,
+                    row["question_id"],
+                    result.get("correct"),
+                )
+                _save_partial_score(
+                    directory,
+                    run_id=run_id,
+                    manifest=manifest,
+                    answer_model=endpoints["answer_model"],
+                    judge_model=endpoints["judge_model"],
+                    rows=ordered,
+                )
+
+        async def score_saved(row: dict[str, Any]) -> None:
+            async with score_slots:
+                await score_one(row, hit_by_id[str(row["question_id"])])
+
+        if already:
+            await asyncio.gather(*(score_saved(row) for row in already))
+        if not pending:
+            return
+        async with search_slots:
+            await search_first_then_parallel(
+                pending,
+                search_one,
+                score_one,
+                rollup=rollup,
+                score_slots=score_slots,
+            )
+
+    await asyncio.gather(*(_one(sample_id) for sample_id in order))
+    _write_search()
+    score_report = _finish_score_report(
+        directory,
+        run_id=run_id,
+        manifest=manifest,
+        answer_model=endpoints["answer_model"],
+        judge_model=endpoints["judge_model"],
+        rows=_ordered_score_rows(manifest, scored),
+    )
+    return {"searched": len(hits), "score": score_report}
+
+
 def _score_endpoints() -> dict[str, str]:
     settings = get_settings()
     return {
@@ -637,7 +863,9 @@ async def run_pipeline(
     total_questions = len(questions)
     endpoints = _score_endpoints()
     scored: dict[str, dict[str, Any]] = {}
-    score_lock = asyncio.Lock()
+    state_lock = asyncio.Lock()
+    rollup = asyncio.Semaphore(1)
+    score_slots = asyncio.Semaphore(SCORE_CONCURRENCY)
 
     def _write_add() -> None:
         _write(
@@ -654,7 +882,7 @@ async def run_pipeline(
                 "word_count": "approximate: CJK character or Latin/number token; punctuation is a separator",
                 "chunk_rule": "20 messages or 2000 approximate words, whichever comes first",
                 "streaming": False,
-                "pipeline": "sample",
+                "pipeline": "parallel",
                 "streaming_searches": 0,
                 "adds": chunks_out,
             },
@@ -678,28 +906,30 @@ async def run_pipeline(
             )
             logger.info("add %s chunk %s/%s", sample.sample_id, index + 1, len(chunks))
             response = await asyncio.to_thread(add_client.add, body)
-            chunks_out.append(
-                {
-                    "request_id": body["request_id"],
-                    "user_id": body["user_id"],
-                    "session_id": body["session_id"],
-                    "messages": len(chunk),
-                    "success": response.get("success") is True,
-                }
-            )
+            async with state_lock:
+                chunks_out.append(
+                    {
+                        "request_id": body["request_id"],
+                        "user_id": body["user_id"],
+                        "session_id": body["session_id"],
+                        "messages": len(chunk),
+                        "success": response.get("success") is True,
+                    }
+                )
+                _write_add()
 
     async def after_add(sample: EvalSample) -> None:
         nonlocal question_no
-        _write_add()
         sample_questions = [_question_row(sample, question) for question in sample.questions]
 
         async def search_one(row: dict[str, Any]) -> dict[str, Any]:
             nonlocal question_no
-            question_no += 1
-            logger.info("search %s/%s %s", question_no, total_questions, row["question_id"])
             hit = await asyncio.to_thread(_search_hit, search_client, run_id=run_id, row=row)
-            hits.append(hit)
-            _write_search()
+            async with state_lock:
+                question_no += 1
+                logger.info("search %s/%s %s", question_no, total_questions, row["question_id"])
+                hits.append(hit)
+                _write_search()
             return hit
 
         async def score_one(row: dict[str, Any], hit: dict[str, Any]) -> None:
@@ -717,7 +947,7 @@ async def run_pipeline(
                 judge_key=endpoints["judge_key"],
                 judge_model=endpoints["judge_model"],
             )
-            async with score_lock:
+            async with state_lock:
                 scored[row["question_id"]] = result
                 ordered = _ordered_score_rows(manifest, scored)
                 logger.info(
@@ -736,9 +966,15 @@ async def run_pipeline(
                     rows=ordered,
                 )
 
-        await search_then_score(sample_questions, search_one, score_one)
+        await search_first_then_parallel(
+            sample_questions,
+            search_one,
+            score_one,
+            rollup=rollup,
+            score_slots=score_slots,
+        )
 
-    await run_overlapped_samples(samples, add_sample, after_add)
+    await run_parallel_conversations(samples, add_sample, after_add)
     _write_add()
     _write_search()
     score_report = None

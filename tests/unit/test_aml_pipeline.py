@@ -7,6 +7,8 @@ import asyncio
 from runners.aml_run import (
     JUDGE_PARSE_ATTEMPTS,
     run_overlapped_samples,
+    run_parallel_conversations,
+    search_first_then_parallel,
     search_then_score,
     verdict_correct_wrong,
 )
@@ -76,3 +78,52 @@ async def test_search_stays_serial_while_scores_overlap():
     assert events.index("search-end q1") < events.index("search-start q2")
     assert events.index("score-start q1") < events.index("search-end q2")
     assert events.index("score-end q1") > events.index("search-start q2")
+
+
+async def test_two_conversations_add_at_once():
+    active = {"n": 0}
+    peak = {"n": 0}
+
+    async def add_sample(sample: str) -> None:
+        active["n"] += 1
+        peak["n"] = max(peak["n"], active["n"])
+        await asyncio.sleep(0.03)
+        active["n"] -= 1
+
+    async def after_add(sample: str) -> None:
+        await asyncio.sleep(0.01)
+
+    await run_parallel_conversations(["a", "b", "c"], add_sample, after_add, add_concurrency=2, search_concurrency=2)
+    assert peak["n"] == 2
+
+
+async def test_first_search_is_alone_then_the_rest_overlap():
+    events: list[str] = []
+    searching = {"n": 0}
+
+    async def search_one(question: str) -> str:
+        searching["n"] += 1
+        if question == "q1":
+            assert searching["n"] == 1
+        events.append(f"search-start {question}")
+        await asyncio.sleep(0.02 if question == "q1" else 0.03)
+        events.append(f"search-end {question}")
+        searching["n"] -= 1
+        return question
+
+    async def score_one(question: str, hit: str) -> None:
+        await asyncio.sleep(0)
+
+    rollup = asyncio.Semaphore(1)
+    score_slots = asyncio.Semaphore(5)
+    await search_first_then_parallel(
+        ["q1", "q2", "q3"],
+        search_one,
+        score_one,
+        rollup=rollup,
+        score_slots=score_slots,
+        question_concurrency=2,
+    )
+    assert events.index("search-end q1") < events.index("search-start q2")
+    assert events.index("search-end q1") < events.index("search-start q3")
+    assert events.index("search-start q2") < events.index("search-end q3")

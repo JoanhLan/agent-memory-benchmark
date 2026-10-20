@@ -21,7 +21,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from benchmark_data.catalog import DATASETS, runnable_ids
-from runners.aml_run import run_add, run_pipeline, run_score, run_search
+from runners.aml_run import run_add, run_pipeline, run_score, run_search, run_search_and_score
 from runners.ingest_run import run_ingest
 from runners.retrieval_run import run_retrieval
 from runners.timem_sweep import parse_sweep_values, run_timem_sweep
@@ -77,6 +77,21 @@ def _build_parser() -> argparse.ArgumentParser:
 
     aml_search = sub.add_parser("aml-search", help="AML Search for a run produced by aml-add")
     aml_search.add_argument("run_id")
+    aml_search.add_argument(
+        "--score",
+        action="store_true",
+        help="Score each question as soon as its search returns. Does not run Add.",
+    )
+    aml_search.add_argument(
+        "--output-dir",
+        default=None,
+        help="Write this search and score beside the Add run, without reusing its checkpoints.",
+    )
+    aml_search.add_argument(
+        "--only-from",
+        default=None,
+        help="Score only question ids present in this earlier aml_score JSON.",
+    )
 
     aml_score = sub.add_parser("aml-score", help="Unofficial answer-then-judge score")
     aml_score.add_argument("run_id")
@@ -322,8 +337,18 @@ def main() -> None:
         print(json.dumps({k: v for k, v in report.items() if k != "adds"}, indent=2, ensure_ascii=False))
         print(f"\nrun_id={run_id}")
     elif args.command == "aml-search":
-        report = run_search(run_id=args.run_id)
-        print(json.dumps({"searched": len(report["results"])}, ensure_ascii=False))
+        if args.score:
+            report = asyncio.run(
+                run_search_and_score(
+                    run_id=args.run_id,
+                    output_dir=args.output_dir,
+                    only_from=args.only_from,
+                )
+            )
+            print(json.dumps({"searched": report["searched"]}, ensure_ascii=False))
+        else:
+            report = run_search(run_id=args.run_id)
+            print(json.dumps({"searched": len(report["results"])}, ensure_ascii=False))
     elif args.command == "aml-score":
         score = asyncio.run(run_score(run_id=args.run_id))
         print(json.dumps({k: v for k, v in score.items() if k != "results"}, indent=2, ensure_ascii=False))
