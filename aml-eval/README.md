@@ -46,6 +46,22 @@ aml-eval/
 ```
 
 每夹含 `manifest.yaml`（来源）和 `papers/`（日常卷、全量卷）。
+## 公开来源
+
+| 夹 | 下载 |
+|----|------|
+| `locomo_refined` | https://github.com/mem-eval-suite/LoCoMo_refined |
+| `longmemeval_s` | https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned |
+| `personamem_v2_32k` / `personamem_v2_128k` | https://huggingface.co/datasets/bowen-upenn/PersonaMem-v2 |
+| `beam` | https://huggingface.co/datasets/Mohammadta/BEAM |
+| `clbench` | https://huggingface.co/datasets/tencent/CL-bench |
+
+
+## 怎么跑
+
+环境、缓存目录、`aml-add` / `aml-search` / `aml-score` / `aml` 与常用参数见仓库根目录 [README.zh-CN.md](../README.zh-CN.md)（英文 [README.md](../README.md)）的 **AML 文本赛道用法**。
+
+说明：`smoke/sets/small.json`（20 题）是评测开始前的固定小卷，但当前根目录 `main.py` **尚未**为 `dataset_id: small` 提供 loader，联调请改用各夹 `papers/daily.json`，或 `python main.py aml --dataset locomo_refined --limit 1`。
 
 ## 跑卷（agent-memory-benchmark）
 

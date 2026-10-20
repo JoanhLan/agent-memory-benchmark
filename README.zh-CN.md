@@ -19,6 +19,107 @@ python main.py aml-score <run_id>
 
 能跑的数据集：`locomo_refined`、`longmemeval_s`、`personamem_v2_32k`、`personamem_v2_128k`、`beam`（公开 100K / 500K / 1M）、`clbench`（评分点全过才算对，单独出分）。ScriptMem 只登记来源。`--streaming` 默认关闭；打开后每写完一段就检索一次，打分用最后一次。2,000 词按空白和标点近似计数（中文一字一词），报告里写明这一点。
 
+## 数据集下载
+
+原始对话与题目从各套公开来源读取（各 `aml-eval/datasets/*/manifest.yaml` 的 `source` 字段亦有记录）：
+
+| 数据集 id | 下载链接 |
+|-----------|----------|
+| `locomo_refined` | https://github.com/mem-eval-suite/LoCoMo_refined |
+| `longmemeval_s` | https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned |
+| `personamem_v2_32k` / `personamem_v2_128k` | https://huggingface.co/datasets/bowen-upenn/PersonaMem-v2 |
+| `beam` | https://huggingface.co/datasets/Mohammadta/BEAM |
+| `clbench` | https://huggingface.co/datasets/tencent/CL-bench |
+
+经典 LoCoMo（下方 TiMEM / MemOS / Mem0 三方对比）从 [snap-research/locomo](https://github.com/snap-research/locomo) 加载（缓存于 `benchmark_data/cache/`）。可选 HuggingFace 回退：[snap-stanford/LoCoMo](https://huggingface.co/datasets/snap-stanford/LoCoMo)，见 `config/default.yaml`。
+
+## AML 文本赛道用法
+
+卷定义与日常/全量切片在 `aml-eval/`（见 [aml-eval/README.md](./aml-eval/README.md)）。评测框架向 `AML_ADD_URL` / `AML_SEARCH_URL` 调用被测平台。本地打分是非官方的。
+
+### 1. 环境准备
+
+```bash
+cd agent-memory-benchmark   # 或你的克隆目录
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+# source .venv/bin/activate     # Linux / macOS
+pip install -r requirements.txt
+copy .env.example .env          # Windows
+# cp .env.example .env          # Linux / macOS
+```
+
+至少填写（变量名见 `.env.example`）：
+
+| 变量 | 作用 |
+|------|------|
+| `AML_ADD_URL` / `AML_SEARCH_URL` | 被测 Add / Search 地址（默认 `http://127.0.0.1:8001/add` 与 `.../search`） |
+| `AML_API_KEY` / `AML_AUTH` | 上述接口鉴权（`AML_AUTH` 默认 `x-api-key`） |
+| `ARK_API_KEY` / `ARK_API_BASE` / `JUDGE_MODEL` | 生成答案与评判（OpenAI 兼容；评判后续可改 `JUDGE_API_*`） |
+
+可选：`AML_HEALTH_URL`、`ANSWER_API_KEY` / `ANSWER_API_BASE`、`JUDGE_API_KEY` / `JUDGE_API_BASE`。
+
+### 2. 下载 / 缓存数据
+
+没有单独的下载命令。首次对某数据集执行 `aml-add` / `aml` 时会拉到 `benchmark_data/cache/`（LoCoMo-Refined、LongMemEval-S、PersonaMem、CLBench 用 httpx；BEAM 用 HuggingFace `datasets`）。再次运行走缓存。BEAM 依赖 `requirements.txt` 里的 `datasets`。
+
+### 3. 列出数据集
+
+```bash
+python main.py aml-datasets
+```
+
+可跑的六个 id：`locomo_refined`、`longmemeval_s`、`personamem_v2_32k`、`personamem_v2_128k`、`beam`、`clbench`。`scriptmem` 仅登记来源。
+
+### 4. Smoke / 快速自检
+
+- 仓库内固定小卷：`aml-eval/smoke/sets/small.json`（20 题，`dataset_id: small`）。**当前未接入** `main.py`（没有 `small` 的 loader，也不能作 `--dataset`），请勿把它当作 `--paper` 去跑 Add/Search。
+- 可用的快速跑法：
+
+```bash
+# 官方日常卷（推荐第一次联调）
+python main.py aml --paper aml-eval/datasets/locomo_refined/papers/daily.json --run-id smoke-locomo-daily
+
+# 或不带 paper、只跑 1 个 sample（有 --paper 时 --limit 无效）
+python main.py aml --dataset locomo_refined --limit 1 --run-id smoke-limit1
+```
+
+### 5. 跑 AML（Add → Search → Score）
+
+分步（共用同一 `run_id`）：
+
+```bash
+python main.py aml-add --paper aml-eval/datasets/locomo_refined/papers/daily.json --run-id my-run
+python main.py aml-search my-run
+python main.py aml-score my-run
+```
+
+一键（Add + Search + 非官方打分）：
+
+```bash
+python main.py aml --paper aml-eval/datasets/locomo_refined/papers/daily.json --run-id my-run
+# 全量卷：
+python main.py aml --paper aml-eval/datasets/locomo_refined/papers/full.json --run-id my-full
+```
+
+报告在 `reports/{run_id}/`（如 `aml_add.json` 及 search/score 输出）。
+
+### 6. 常用参数
+
+| 参数 | 命令 | 含义 |
+|------|------|------|
+| `--paper PATH` | `aml` / `aml-add` | `aml-eval/.../papers/` 下的卷 JSON（`daily.json` / `full.json`）。决定 `dataset_id` 与筛题；此时 `--limit` 无效 |
+| `--dataset ID` | `aml` / `aml-add` | 六个可跑 id 之一（无 `--paper` 时必填） |
+| `--run-id ID` | `aml` / `aml-add` | `reports/` 下的 run 目录名 |
+| `--limit N` | `aml` / `aml-add` | 未指定 `--paper` 时的最大 sample 数 |
+| `--streaming` | `aml` / `aml-add` | 每写完一段就检索；打分用最后一次检索 |
+| `--skip-score` | `aml` | 检索后跳过非官方评判 |
+| `--score` | `aml-search` | 每题检索返回后立刻打分（不跑 Add） |
+| `--output-dir DIR` | `aml-search` | 搜索/打分写到指定目录，不复用 Add 的 checkpoint |
+| `--only-from PATH` | `aml-search` | 只对某次已有 `aml_score` JSON 里出现过的题 id 打分 |
+
+`--paper` 与 `--dataset` 二选一；同时给时 `--dataset` 必须与卷内 `dataset_id` 一致。PersonaMem 一次只开 `32k` 或 `128k` 其中一轨。CLBench 按 rubrics 单独出分，不与其他套准确率加总。
+
 下面仍是原来的 TiMEM / MemOS / Mem0 三方对比，命令还在，不是这次比赛的默认入口。
 
 # TiMEM vs MemOS vs Mem0 基准测试

@@ -8,6 +8,107 @@
 
 The default path calls a contestant Add/Search API using the [Agent Memory Leaderboard](https://agentmemoryleaderboard.ai/docs) text-track contract. `python main.py aml-datasets` lists the seven text datasets. Six can run: LoCoMo-Refined, LongMemEval-S, PersonaMem 32k and 128k, BEAM (public 100K / 500K / 1M), and CLBench (its own all-rubrics sheet). ScriptMem stays registered only. `--streaming` is off unless you pass it; then each written chunk is searched and the last search is scored. Local scores are unofficial.
 
+## Dataset downloads
+
+Raw conversations and questions come from public sources (also recorded in the `source` field of each `aml-eval/datasets/*/manifest.yaml`):
+
+| Dataset id | Download |
+|------------|----------|
+| `locomo_refined` | https://github.com/mem-eval-suite/LoCoMo_refined |
+| `longmemeval_s` | https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned |
+| `personamem_v2_32k` / `personamem_v2_128k` | https://huggingface.co/datasets/bowen-upenn/PersonaMem-v2 |
+| `beam` | https://huggingface.co/datasets/Mohammadta/BEAM |
+| `clbench` | https://huggingface.co/datasets/tencent/CL-bench |
+
+Classic LoCoMo (TiMEM / MemOS / Mem0 comparison below) loads from [snap-research/locomo](https://github.com/snap-research/locomo) (cached under `benchmark_data/cache/`). Optional HuggingFace fallback: [snap-stanford/LoCoMo](https://huggingface.co/datasets/snap-stanford/LoCoMo) — see `config/default.yaml`.
+
+## AML text-track usage
+
+Paper definitions and daily/full slices live under `aml-eval/` (see [aml-eval/README.md](./aml-eval/README.md)). The harness calls your platform at `AML_ADD_URL` / `AML_SEARCH_URL`. Local scores are unofficial.
+
+### 1. Environment
+
+```bash
+cd agent-memory-benchmark   # or your clone directory
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+# source .venv/bin/activate     # Linux / macOS
+pip install -r requirements.txt
+copy .env.example .env          # Windows
+# cp .env.example .env          # Linux / macOS
+```
+
+Fill at least (names from `.env.example`):
+
+| Variable | Role |
+|----------|------|
+| `AML_ADD_URL` / `AML_SEARCH_URL` | Contestant Add / Search endpoints (default `http://127.0.0.1:8001/add` and `.../search`) |
+| `AML_API_KEY` / `AML_AUTH` | Auth for those endpoints (`AML_AUTH` default `x-api-key`) |
+| `ARK_API_KEY` / `ARK_API_BASE` / `JUDGE_MODEL` | Answer + judge (OpenAI-compatible; judge can later move to `JUDGE_API_*`) |
+
+Optional: `AML_HEALTH_URL`, `ANSWER_API_KEY` / `ANSWER_API_BASE`, `JUDGE_API_KEY` / `JUDGE_API_BASE`.
+
+### 2. Download / cache
+
+There is no separate download CLI. The first `aml-add` / `aml` for a dataset fetches into `benchmark_data/cache/` (httpx for LoCoMo-Refined, LongMemEval-S, PersonaMem, CLBench; HuggingFace `datasets` for BEAM). Re-runs reuse the cache. BEAM needs `datasets` from `requirements.txt`.
+
+### 3. List datasets
+
+```bash
+python main.py aml-datasets
+```
+
+Six runnable ids: `locomo_refined`, `longmemeval_s`, `personamem_v2_32k`, `personamem_v2_128k`, `beam`, `clbench`. `scriptmem` is registered only.
+
+### 4. Smoke / quick check
+
+- In-repo fixture: `aml-eval/smoke/sets/small.json` (20 questions, `dataset_id: small`). It is **not** wired to `main.py` yet (`small` is not a loader / `--dataset` choice), so do not pass it as `--paper` for Add/Search.
+- Supported quick runs:
+
+```bash
+# Official daily slice (recommended first live run)
+python main.py aml --paper aml-eval/datasets/locomo_refined/papers/daily.json --run-id smoke-locomo-daily
+
+# Or one sample without a paper (limit is ignored when --paper is set)
+python main.py aml --dataset locomo_refined --limit 1 --run-id smoke-limit1
+```
+
+### 5. Run AML (Add → Search → Score)
+
+Split stages (reuse the same `run_id`):
+
+```bash
+python main.py aml-add --paper aml-eval/datasets/locomo_refined/papers/daily.json --run-id my-run
+python main.py aml-search my-run
+python main.py aml-score my-run
+```
+
+One shot (Add + Search + unofficial score):
+
+```bash
+python main.py aml --paper aml-eval/datasets/locomo_refined/papers/daily.json --run-id my-run
+# or full paper:
+python main.py aml --paper aml-eval/datasets/locomo_refined/papers/full.json --run-id my-full
+```
+
+Reports land under `reports/{run_id}/` (e.g. `aml_add.json`, search/score outputs).
+
+### 6. Common flags
+
+| Flag | Where | Meaning |
+|------|--------|---------|
+| `--paper PATH` | `aml` / `aml-add` | Paper JSON under `aml-eval/.../papers/` (`daily.json` / `full.json`). Drives `dataset_id` and question filter; `--limit` is ignored |
+| `--dataset ID` | `aml` / `aml-add` | One of the six runnable ids (required if no `--paper`) |
+| `--run-id ID` | `aml` / `aml-add` | Run directory name under `reports/` |
+| `--limit N` | `aml` / `aml-add` | Max samples when `--paper` is not set |
+| `--streaming` | `aml` / `aml-add` | Search after each written chunk; score uses the last search |
+| `--skip-score` | `aml` | Skip unofficial judge after search |
+| `--score` | `aml-search` | Score each question as soon as its search returns (no Add) |
+| `--output-dir DIR` | `aml-search` | Write search/score beside the Add run without reusing its checkpoints |
+| `--only-from PATH` | `aml-search` | Score only question ids present in an earlier `aml_score` JSON |
+
+`--paper` and `--dataset` are alternatives; if both are set, `--dataset` must match the paper's `dataset_id`. PersonaMem: run only one of `personamem_v2_32k` / `personamem_v2_128k` at a time. CLBench scores stay on a separate rubrics sheet.
+
 The sections below describe the older TiMEM / MemOS / Mem0 comparison. Those commands still run.
 
 # TiMEM vs MemOS vs Mem0 Benchmark
